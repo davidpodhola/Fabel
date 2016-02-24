@@ -91,11 +91,11 @@ let compile com checker projCode fileMask =
         |> Fable2Babel.transformFiles com
         |> function
             | files when Seq.isEmpty files ->
-                printError "No code available to compile"
+                printError (Exception("No code available to compile"))
             | files ->
                 Seq.iter printFile files
     with ex ->
-        printError ex.Message
+        printError ex
 
 [<EntryPoint>]
 let main argv =
