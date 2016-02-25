@@ -3,7 +3,7 @@
 // to explain how to program dynamically with F# and Fable. 
 
 // Load and open Fable.Core to get access to Fable attributes and operators
-#load "../../../lib/Fable.Core.fs"
+#load "../../../../lib/Fable.Core.fs"
 open Fable.Core
 
 type Todo = {
