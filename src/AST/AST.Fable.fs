@@ -63,9 +63,14 @@ and Entity(kind, file, fullName, interfaces, decorators, isPublic) =
     override x.ToString() = sprintf "%s %A" x.Name kind
 
 and Declaration =
-    | ActionDeclaration of Expr
-    | EntityDeclaration of Entity * nested: Declaration list * range: SourceLocation
+    | ActionDeclaration of Expr * SourceLocation
+    | EntityDeclaration of Entity * Declaration list * SourceLocation
     | MemberDeclaration of Member
+    member x.Range =
+        match x with
+        | ActionDeclaration (_,r) -> r
+        | EntityDeclaration (_,_,r) -> r
+        | MemberDeclaration m -> m.Range
 
 and MemberKind =
     | Constructor
@@ -97,6 +102,10 @@ and File(fileName, root, decls) =
     member x.FileName: string = fileName
     member x.Root: Entity = root
     member x.Declarations: Declaration list = decls
+    member x.Range =
+        match decls with
+        | [] -> SourceLocation.Empty
+        | decls -> SourceLocation.Empty + (List.last decls).Range
     
 (** ##Expressions *)
 and ArrayKind = TypedArray of NumberKind | DynamicArray | Tuple
@@ -331,15 +340,21 @@ module Util =
                 | _ -> failwith "Import attributes must have a single non-empty string argument"
             | _ -> None)
 
-    let makeTypeRef com typ =
+    // TODO: Pass range information to display it on the exception here?
+    let makeTypeRef com range typ =
         match typ with
+        | PrimitiveType _ ->
+            failwithf "Cannot reference a primitive type: %A" range
+        | UnknownType ->
+            failwithf "%s %s: %A"
+                "Cannot reference unknown type."
+                "If this a generic argument, try to make function inline"
+                range
         | DeclaredType ent ->
             match tryImported com ent.Name ent.Decorators with
             | Some expr -> expr
             | None -> Value (TypeRef ent)
-        | _ ->
-            failwithf "Unexpected reference to type: %A" typ
-        
+
     let makeCall com range typ kind =
         let getCallee meth args owner =
             match meth with
@@ -391,7 +406,7 @@ module Util =
                 CoreLibCall ("Util", Some "hasInterface", false, [expr; makeConst typEnt.FullName])
                 |> makeCall com range boolType 
             | _ ->
-                makeBinOp range boolType [expr; makeTypeRef com typ] BinaryInstanceOf 
+                makeBinOp range boolType [expr; makeTypeRef com range typ] BinaryInstanceOf 
         | _ -> failwithf "Unsupported type test in %A: %A" range typ
 
     let makeUnionCons range =
