@@ -72,6 +72,7 @@ Target "Plugins" (fun _ ->
         |> FscHelper.compile [
             FscHelper.Out ("build/" + Path.ChangeExtension(fsx, ".dll"))
             FscHelper.Target FscHelper.TargetType.Library
+            FscHelper.UseFsxExe
         ]
         |> function
             | 0 -> ()
