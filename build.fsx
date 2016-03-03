@@ -40,6 +40,7 @@ Target "MochaTest" (fun _ ->
     let npmFilePath =
         match environVarOrNone "TRAVIS" with
         | Some _ when not(String.IsNullOrWhiteSpace(npmPathEnv)) -> npmPathEnv
+        | Some _ when String.IsNullOrWhiteSpace(npmPathEnv) -> "/home/travis/.nvm/versions/node/v5.0.0/bin/node" // this is where node is on Travis now
         | _ -> NpmHelper.defaultNpmParams.NpmFilePath
     let buildParam command p =
         { p with NpmHelper.NpmFilePath = npmFilePath
