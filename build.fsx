@@ -39,6 +39,7 @@ Target "MochaTest" (fun _ ->
         match environVarOrNone "TRAVIS" with
         | Some _ -> environVar "NPM_PATH"
         | None -> NpmHelper.defaultNpmParams.NpmFilePath
+    printfn "npmFilePath:%s" npmFilePath
     let buildParam command p =
         { p with NpmHelper.NpmFilePath = npmFilePath
                  NpmHelper.Command = NpmHelper.Run command }
