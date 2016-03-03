@@ -36,11 +36,6 @@ Target "NUnitTest" (fun _ ->
 )
 
 Target "MochaTest" (fun _ ->
-    ExecProcess (fun info ->
-            info.FileName <- (@"where")
-            info.Arguments <- "node"
-        ) (System.TimeSpan.FromMinutes 5.) |> ignore
-
     let npmPathEnv = environVar "NPM_PATH"
     let npmFilePath =
         match environVarOrNone "TRAVIS" with
