@@ -2,6 +2,7 @@
 
 open System.IO
 open Fake
+open System
 
 // Directories
 let mainBuildDir = "build/main/"
@@ -35,11 +36,11 @@ Target "NUnitTest" (fun _ ->
 )
 
 Target "MochaTest" (fun _ ->
+    let npmPathEnv = environVar "NPM_PATH"
     let npmFilePath =
         match environVarOrNone "TRAVIS" with
-        | Some _ -> environVar "NPM_PATH"
-        | None -> NpmHelper.defaultNpmParams.NpmFilePath
-    printfn "npmFilePath:%s" npmFilePath
+        | Some _ when not(String.IsNullOrWhiteSpace(npmPathEnv)) -> npmPathEnv
+        | _ -> NpmHelper.defaultNpmParams.NpmFilePath
     let buildParam command p =
         { p with NpmHelper.NpmFilePath = npmFilePath
                  NpmHelper.Command = NpmHelper.Run command }
