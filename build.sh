@@ -8,6 +8,7 @@ else
 fi
 
 which node
+which npm
 
 npm install
 
