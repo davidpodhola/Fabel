@@ -7,7 +7,7 @@ else
   MONO="mono"
 fi
 
-where node
+which node
 
 npm install
 
