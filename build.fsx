@@ -36,12 +36,10 @@ Target "NUnitTest" (fun _ ->
 )
 
 Target "MochaTest" (fun _ ->
-    let npmPathEnv = environVar "NPM_PATH"
     let npmFilePath =
         match environVarOrNone "TRAVIS" with
-        | Some _ when not(String.IsNullOrWhiteSpace(npmPathEnv)) -> npmPathEnv
-        | Some _ when String.IsNullOrWhiteSpace(npmPathEnv) -> "/home/travis/.nvm/versions/node/v5.0.0/bin/npm" // this is where npm is on Travis now
-        | _ -> NpmHelper.defaultNpmParams.NpmFilePath
+        | Some _ -> "/home/travis/.nvm/versions/node/v5.0.0/bin/npm" // this is where npm is on Travis now
+        | None -> NpmHelper.defaultNpmParams.NpmFilePath
     let buildParam command p =
         { p with NpmHelper.NpmFilePath = npmFilePath
                  NpmHelper.Command = NpmHelper.Run command }
