@@ -1,9 +1,22 @@
 NUGET
   remote: https://www.nuget.org/api/v2
   specs:
+    canopy (0.9.45)
+      FSharp.Core (>= 3.0.2)
+      Selenium.Support (2.52.0)
+      Selenium.WebDriver (2.52.0)
+      SizSelCsZzz (0.3.36)
     FAKE (4.21.0)
     FSharp.Compiler.Service (2.0.0.6)
     FSharp.Compiler.Service.ProjectCracker (2.0.0.6)
+    FSharp.Core (4.0.0.1)
     Newtonsoft.Json (8.0.2)
     NUnit (2.6.4)
     NUnit.Runners (2.6.4)
+    Selenium.Support (2.52.0)
+      Selenium.WebDriver (>= 2.52.0)
+    Selenium.WebDriver (2.52.0)
+    SizSelCsZzz (0.3.36)
+      Newtonsoft.Json (>= 6.0)
+      Selenium.Support (>= 2.40)
+      Selenium.WebDriver (>= 2.40)
