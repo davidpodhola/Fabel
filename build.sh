@@ -27,6 +27,6 @@ if [ $exit_code -ne 0 ]; then
 exit $exit_code
 fi
 
-cp -R patches packages
+cp -r patches/* packages
 
 $MONO packages/FAKE/tools/FAKE.exe $@ --fsiargs build.fsx
