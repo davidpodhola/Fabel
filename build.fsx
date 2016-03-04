@@ -15,6 +15,13 @@ let appReferences  = !! "src/**/*.fsproj"
 // version info
 let version = "0.1"  // or retrieve from CI server
 
+// if running on CI server
+let runningOnAppveyor =
+  not <| String.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))
+let runningOnTravis =
+  not <| String.IsNullOrEmpty(Environment.GetEnvironmentVariable("TRAVIS"))
+let runningOnCI = runningOnAppveyor|| runningOnTravis
+
 // Targets
 Target "Clean" (fun _ ->
     !! mainBuildDir ++ testBuildDir ++ pluginsBuildDir
@@ -66,15 +73,15 @@ Target "CopyLib" (fun _ ->
 )
 
 Target "Plugins" (fun _ ->
+    let compileParams fsx = [
+            FscHelper.Out ("build/" + Path.ChangeExtension(fsx, ".dll"))
+            FscHelper.Target FscHelper.TargetType.Library
+        ]
     CreateDir "build/plugins"
     [ "plugins/Fable.Plugins.NUnit.fsx" ]
     |> Seq.iter (fun fsx ->
         [fsx]
-        |> FscHelper.compile [
-            FscHelper.Out ("build/" + Path.ChangeExtension(fsx, ".dll"))
-            FscHelper.Target FscHelper.TargetType.Library
-            FscHelper.UseFscExe
-        ]
+        |> FscHelper.compile (if runningOnCI then compileParams fsx else FscHelper.UseFscExe :: compileParams fsx )
         |> function
             | 0 -> ()
             | _ -> failwithf "Cannot compile %s" fsx)
