@@ -7,6 +7,7 @@ open System
 // Directories
 let mainBuildDir = "build/main/"
 let testBuildDir = "build/test/"
+let uitestBuildDir = "build/uitest/"
 let pluginsBuildDir = "build/plugins/"
 
 // Filesets
@@ -54,6 +55,13 @@ Target "MochaTest" (fun _ ->
     NpmHelper.Npm (buildParam "test")
 )
 
+Target "UITests" (fun _ ->
+    !! "uitest/**/*.fsproj"
+    |> MSBuild uitestBuildDir "Build"
+        ["Configuration","Debug"]
+    |> Log "UITests-Debug-Output: "
+)
+
 Target "MainRelease" (fun _ ->
     let xmlPath = Path.Combine(Path.GetFullPath mainBuildDir, "Fable.xml")
     !! "src/**/*.fsproj"
@@ -94,6 +102,7 @@ Target "All" ignore
 // Build order
 "Clean"
   ==> "MainRelease"
+  ==> "UITests"
   ==> "Plugins"
   ==> "CopyLib"
   ==> "Release"

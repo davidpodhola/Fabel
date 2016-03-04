@@ -42,6 +42,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "plugins", "plugins", "{119E
 		plugins\Fable.Plugins.Random.fsx = plugins\Fable.Plugins.Random.fsx
 	EndProjectSection
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fable.UITests", "uitest\Fable.UITests\Fable.UITests.fsproj", "{0212BD7A-F98B-47BE-B88C-2459CA813224}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -56,6 +58,10 @@ Global
 		{6EF06954-FBDF-42C7-815C-B13BA2926C93}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6EF06954-FBDF-42C7-815C-B13BA2926C93}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6EF06954-FBDF-42C7-815C-B13BA2926C93}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0212BD7A-F98B-47BE-B88C-2459CA813224}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0212BD7A-F98B-47BE-B88C-2459CA813224}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0212BD7A-F98B-47BE-B88C-2459CA813224}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0212BD7A-F98B-47BE-B88C-2459CA813224}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
