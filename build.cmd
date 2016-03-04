@@ -13,4 +13,6 @@ if errorlevel 1 (
   exit /b %errorlevel%
 )
 
+xcopy patches\*.* packages\ /S /Y
+
 packages\FAKE\tools\FAKE.exe build.fsx %*
