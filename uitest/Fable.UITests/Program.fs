@@ -4,7 +4,7 @@ open System
 
 "opening todo and entering one" &&& fun _ ->
   url "http://localhost:8090/sample/browser/todomvc/"
-  ( element "h1" ) == "todos"
+  "h1" == "todos"
   ".newtodo" << "task"
   press enter
   first ".todo" |> elementWithin "label" == "task"
