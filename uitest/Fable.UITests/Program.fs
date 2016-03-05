@@ -9,16 +9,10 @@ open System
   press enter
   first ".todo" |> elementWithin "label" == "task"
 
-[<EntryPoint>]
-let main argv = 
-    printfn "%A" argv
+// firefox is reported to work very well on AppVeyor (phantomJS not)
+start firefox
 
-    // firefox is reported to work very well on AppVeyor (phantomJS not)
-    start firefox
+//run all tests
+run()
 
-    //run all tests
-    run()
-
-    quit()
-
-    0 
+quit()
