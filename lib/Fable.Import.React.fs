@@ -3,7 +3,7 @@ open System
 open Fable.Core
 open Fable.Import.JS
 open Fable.Import.Browser
-    
+
 module React =
     type ReactType =
         U3<string, ComponentClass<obj>, StatelessComponent<obj>>
@@ -33,13 +33,15 @@ module React =
         abstract ref: U2<string, Func<SVGElement, obj>> with get, set
 
     and Factory<'P> =
-        interface end
+        [<Emit("$0($1...)")>] abstract callSelf: ?props: 'P * [<ParamArray>] children: ReactNode[] -> ReactElement<'P>
 
     and ClassicFactory<'P> =
         inherit Factory<'P>
+        [<Emit("$0($1...)")>] abstract callSelf: ?props: 'P * [<ParamArray>] children: ReactNode[] -> ClassicElement<'P>
 
     and DOMFactory<'P> =
         inherit Factory<'P>
+        [<Emit("$0($1...)")>] abstract callSelf: ?props: 'P * [<ParamArray>] children: ReactNode[] -> DOMElement<'P>
 
     and HTMLFactory =
         DOMFactory<HTMLProps<HTMLElement>>
@@ -62,7 +64,7 @@ module React =
     and ReactInstance =
         U2<Component<obj, obj>, Element>
 
-    and [<AbstractClass>] AComponentLifecycle<'P, 'S>() =
+    and [<Import("react?get=Component")>] Component<'P, 'S>(?props: 'P, ?context: obj) =
         interface ComponentLifecycle<'P, 'S> with
             member __.componentWillMount(): unit = failwith "JS only"
             member __.componentDidMount(): unit = failwith "JS only"
@@ -71,9 +73,6 @@ module React =
             member __.componentWillUpdate(nextProps: 'P, nextState: 'S, nextContext: obj): unit = failwith "JS only"
             member __.componentDidUpdate(prevProps: 'P, prevState: 'S, prevContext: obj): unit = failwith "JS only"
             member __.componentWillUnmount(): unit = failwith "JS only"
-
-    and [<Import("react?get=Component")>] Component<'P, 'S>(?props: 'P, ?context: obj) =
-        inherit AComponentLifecycle<'P, 'S>()
         member __.props with get(): 'P = failwith "JS only" and set(v: 'P): unit = failwith "JS only"
         member __.state with get(): 'S = failwith "JS only" and set(v: 'S): unit = failwith "JS only"
         member __.context with get(): obj = failwith "JS only" and set(v: obj): unit = failwith "JS only"
@@ -81,13 +80,20 @@ module React =
         member __.setState(f: Func<'S, 'P, 'S>, ?callback: Func<obj>): unit = failwith "JS only"
         member __.setState(state: 'S, ?callback: Func<obj>): unit = failwith "JS only"
         member __.forceUpdate(?callBack: Func<obj>): unit = failwith "JS only"
-        member __.render(): obj (* JSX.Element *) = failwith "JS only"
+        member __.render(): ReactElement<'P> = failwith "JS only"
 
-    and [<AbstractClass>] ClassicComponent<'P, 'S>() =
-        inherit Component<'P, 'S>()
-        member __.replaceState(nextState: 'S, ?callback: Func<obj>): unit = failwith "JS only"
-        member __.isMounted(): bool = failwith "JS only"
-        member __.getInitialState(): 'S = failwith "JS only"
+    and ClassicComponent<'P, 'S> =
+        abstract props: 'P with get, set
+        abstract state: 'S with get, set
+        abstract context: obj with get, set
+        abstract refs: obj with get, set
+        abstract setState: f: Func<'S, 'P, 'S> * ?callback: Func<obj> -> unit
+        abstract setState: state: 'S * ?callback: Func<obj> -> unit
+        abstract forceUpdate: ?callBack: Func<obj> -> unit
+        abstract render: unit -> ReactElement<'P>
+        abstract replaceState: nextState: 'S * ?callback: Func<obj> -> unit
+        abstract isMounted: unit -> bool
+        abstract getInitialState: unit -> 'S
 
     and ChildContextProvider<'CC> =
         abstract getChildContext: unit -> 'CC
@@ -97,6 +103,7 @@ module React =
         abstract contextTypes: ValidationMap<obj> option with get, set
         abstract defaultProps: 'P option with get, set
         abstract displayName: string option with get, set
+        [<Emit("$0($1...)")>] abstract callSelf: ?props: 'P * ?context: obj -> ReactElement<obj>
 
     and ComponentClass<'P> =
         abstract propTypes: ValidationMap<'P> option with get, set
@@ -133,6 +140,7 @@ module React =
 
     and ComponentSpec<'P, 'S> =
         inherit Mixin<'P, 'S>
+        [<Emit("$0[$1]{{=$2}}")>] abstract Item: propertyName: string -> obj with get, set
         abstract render: unit -> ReactElement<obj>
 
     and SyntheticEvent =
@@ -167,6 +175,7 @@ module React =
 
     and FormEvent =
         inherit SyntheticEvent
+
 
     and KeyboardEvent =
         inherit SyntheticEvent
@@ -224,7 +233,7 @@ module React =
         abstract deltaZ: float with get, set
 
     and EventHandler<'E> =
-        interface end
+        [<Emit("$0($1...)")>] abstract callSelf: ``event``: 'E -> unit
 
     and ReactEventHandler =
         EventHandler<SyntheticEvent>
@@ -268,9 +277,11 @@ module React =
         inherit HTMLAttributes
         inherit Props<'T>
 
+
     and SVGProps =
         inherit SVGAttributes
         inherit Props<SVGElement>
+
 
     and DOMAttributes =
         abstract dangerouslySetInnerHTML: obj option with get, set
@@ -610,6 +621,7 @@ module React =
         abstract wrapMargin: obj option with get, set
         abstract wrapOption: obj option with get, set
         abstract writingMode: obj option with get, set
+        [<Emit("$0[$1]{{=$2}}")>] abstract Item: propertyName: string -> obj with get, set
 
     and HTMLAttributes =
         inherit DOMAttributes
@@ -754,6 +766,7 @@ module React =
         abstract results: float option with get, set
         abstract security: string option with get, set
         abstract unselectable: bool option with get, set
+        [<Emit("$0[$1]{{=$2}}")>] abstract Item: key: string -> obj with get, set
 
     and SVGAttributes =
         inherit HTMLAttributes
@@ -947,14 +960,14 @@ module React =
         abstract tspan: SVGFactory with get, set
 
     and Validator<'T> =
-        interface end
+        [<Emit("$0($1...)")>] abstract callSelf: ``object``: 'T * key: string * componentName: string -> Error
 
     and Requireable<'T> =
         inherit Validator<'T>
         abstract isRequired: Validator<'T> with get, set
 
     and ValidationMap<'T> =
-        interface end
+        [<Emit("$0[$1]{{=$2}}")>] abstract Item: key: string -> Validator<'T> with get, set
 
     and ReactPropTypes =
         abstract any: Requireable<obj> with get, set
@@ -995,64 +1008,37 @@ module React =
         abstract pageY: float with get, set
 
     and TouchList =
+        [<Emit("$0[$1]{{=$2}}")>] abstract Item: index: float -> Touch with get, set
         abstract length: float with get, set
         abstract item: index: float -> Touch
         abstract identifiedTouch: identifier: float -> Touch
 
-    type Globals =
-        abstract DOM: ReactDOM with get, set
-        abstract PropTypes: ReactPropTypes with get, set
-        abstract Children: ReactChildren with get, set
-        abstract createClass: spec: ComponentSpec<'P, 'S> -> ClassicComponentClass<'P>
-        abstract createFactory: ``type``: string -> DOMFactory<'P>
-        abstract createFactory: ``type``: ClassicComponentClass<'P> -> ClassicFactory<'P>
-        abstract createFactory: ``type``: U2<ComponentClass<'P>, StatelessComponent<'P>> -> Factory<'P>
-        abstract createElement: ``type``: string * ?props: 'P * [<ParamArray>] children: ReactNode[] -> DOMElement<'P>
-        abstract createElement: ``type``: ClassicComponentClass<'P> * ?props: 'P * [<ParamArray>] children: ReactNode[] -> ClassicElement<'P>
-        abstract createElement: ``type``: U2<ComponentClass<'P>, StatelessComponent<'P>> * ?props: 'P * [<ParamArray>] children: ReactNode[] -> ReactElement<'P>
-        abstract cloneElement: element: DOMElement<'P> * ?props: 'P * [<ParamArray>] children: ReactNode[] -> DOMElement<'P>
-        abstract cloneElement: element: ClassicElement<'P> * ?props: 'P * [<ParamArray>] children: ReactNode[] -> ClassicElement<'P>
-        abstract cloneElement: element: ReactElement<'P> * ?props: 'P * [<ParamArray>] children: ReactNode[] -> ReactElement<'P>
-        abstract isValidElement: ``object``: obj -> bool
+    type [<Import("react")>] Globals =
+        static member DOM with get(): ReactDOM = failwith "JS only" and set(v: ReactDOM): unit = failwith "JS only"
+        static member PropTypes with get(): ReactPropTypes = failwith "JS only" and set(v: ReactPropTypes): unit = failwith "JS only"
+        static member Children with get(): ReactChildren = failwith "JS only" and set(v: ReactChildren): unit = failwith "JS only"
+        static member createClass(spec: ComponentSpec<'P, 'S>): ClassicComponentClass<'P> = failwith "JS only"
+        static member createFactory(``type``: string): DOMFactory<'P> = failwith "JS only"
+        static member createFactory(``type``: ClassicComponentClass<'P>): ClassicFactory<'P> = failwith "JS only"
+        static member createFactory(``type``: U2<ComponentClass<'P>, StatelessComponent<'P>>): Factory<'P> = failwith "JS only"
+        static member createElement(``type``: string, props: 'P, [<ParamArray>] children: ReactNode[]): DOMElement<'P> = failwith "JS only"
+        static member createElement(``type``: ClassicComponentClass<'P>, props: 'P, [<ParamArray>] children: ReactNode[]): ClassicElement<'P> = failwith "JS only"
+        static member createElement(``type``: U2<ComponentClass<'P>, StatelessComponent<'P>>, props: 'P, [<ParamArray>] children: ReactNode[]): ReactElement<'P> = failwith "JS only"
+        static member cloneElement(element: DOMElement<'P>, props: 'P, [<ParamArray>] children: ReactNode[]): DOMElement<'P> = failwith "JS only"
+        static member cloneElement(element: ClassicElement<'P>, props: 'P, [<ParamArray>] children: ReactNode[]): ClassicElement<'P> = failwith "JS only"
+        static member cloneElement(element: ReactElement<'P>, props: 'P, [<ParamArray>] children: ReactNode[]): ReactElement<'P> = failwith "JS only"
+        static member isValidElement(``object``: obj): bool = failwith "JS only"
 
-    let [<Import("react")>] Globals: Globals = failwith "JS only"
-
-
-    module DOM =
-        type Globals =
-            abstract version: string with get, set
-            abstract findDOMNode: instance: ReactInstance -> 'E
-            abstract findDOMNode: instance: ReactInstance -> Element
-            abstract render: element: DOMElement<'P> * container: Element * ?callback: Func<Element, obj> -> Element
-            abstract render: element: ClassicElement<'P> * container: Element * ?callback: Func<ClassicComponent<'P, 'S>, obj> -> ClassicComponent<'P, 'S>
-            abstract render: element: ReactElement<'P> * container: Element * ?callback: Func<Component<'P, 'S>, obj> -> Component<'P, 'S>
-            abstract unmountComponentAtNode: container: Element -> bool
-            abstract unstable_batchedUpdates: callback: Func<'A, 'B, obj> * a: 'A * b: 'B -> unit
-            abstract unstable_batchedUpdates: callback: Func<'A, obj> * a: 'A -> unit
-            abstract unstable_batchedUpdates: callback: Func<obj> -> unit
-            abstract unstable_renderSubtreeIntoContainer: parentComponent: Component<obj, obj> * nextElement: DOMElement<'P> * container: Element * ?callback: Func<Element, obj> -> Element
-            abstract unstable_renderSubtreeIntoContainer: parentComponent: Component<obj, obj> * nextElement: ClassicElement<'P> * container: Element * ?callback: Func<ClassicComponent<'P, 'S>, obj> -> ClassicComponent<'P, 'S>
-            abstract unstable_renderSubtreeIntoContainer: parentComponent: Component<obj, obj> * nextElement: ReactElement<'P> * container: Element * ?callback: Func<Component<'P, 'S>, obj> -> Component<'P, 'S>
-
-        let [<Import("react-dom")>] Globals: Globals = failwith "JS only"
-
-
-    module DOMServer =
-        type Globals =
-            abstract version: string with get, set
-            abstract renderToString: element: ReactElement<obj> -> string
-            abstract renderToStaticMarkup: element: ReactElement<obj> -> string
-
-        let [<Import("react-dom/server")>] Globals: Globals = failwith "JS only"
 
 
 module JSX =
     type Element =
         inherit React.ReactElement<obj>
 
-    and [<AbstractClass>] ElementClass() =
-        inherit React.Component<obj, obj>()
-        member __.render(): Element = failwith "JS only"
+
+    // and ElementClass =
+    //     inherit React.Component<obj, obj>
+    //     abstract render: unit -> Element
 
     and ElementAttributesProperty =
         abstract props: obj with get, set
@@ -1196,5 +1182,29 @@ module JSX =
         abstract stop: React.SVGProps with get, set
         abstract text: React.SVGProps with get, set
         abstract tspan: React.SVGProps with get, set
+
+
+module ReactDom =
+    open React
+
+    type [<Import("react-dom")>] Globals =
+        static member version with get(): string = failwith "JS only" and set(v: string): unit = failwith "JS only"
+        static member findDOMNode(instance: ReactInstance): 'E = failwith "JS only"
+        static member findDOMNode(instance: ReactInstance): Element = failwith "JS only"
+        static member render(element: DOMElement<'P>, container: Element, ?callback: Func<Element, obj>): Element = failwith "JS only"
+        static member render(element: ClassicElement<'P>, container: Element, ?callback: Func<ClassicComponent<'P, 'S>, obj>): ClassicComponent<'P, 'S> = failwith "JS only"
+        static member render(element: ReactElement<'P>, container: Element, ?callback: Func<Component<'P, 'S>, obj>): Component<'P, 'S> = failwith "JS only"
+        static member unmountComponentAtNode(container: Element): bool = failwith "JS only"
+        static member unstable_batchedUpdates(callback: Func<'A, 'B, obj>, a: 'A, b: 'B): unit = failwith "JS only"
+        static member unstable_batchedUpdates(callback: Func<'A, obj>, a: 'A): unit = failwith "JS only"
+        static member unstable_batchedUpdates(callback: Func<obj>): unit = failwith "JS only"
+        static member unstable_renderSubtreeIntoContainer(parentComponent: Component<obj, obj>, nextElement: DOMElement<'P>, container: Element, ?callback: Func<Element, obj>): Element = failwith "JS only"
+        static member unstable_renderSubtreeIntoContainer(parentComponent: Component<obj, obj>, nextElement: ClassicElement<'P>, container: Element, ?callback: Func<ClassicComponent<'P, 'S>, obj>): ClassicComponent<'P, 'S> = failwith "JS only"
+        static member unstable_renderSubtreeIntoContainer(parentComponent: Component<obj, obj>, nextElement: ReactElement<'P>, container: Element, ?callback: Func<Component<'P, 'S>, obj>): Component<'P, 'S> = failwith "JS only"
+
+    type [<Import("react-dom/server")>] Server =
+        static member version with get(): string = failwith "JS only" and set(v: string): unit = failwith "JS only"
+        static member renderToString(element: ReactElement<'P>): string = failwith "JS only"
+        static member renderToStaticMarkup(element: ReactElement<'P>): string = failwith "JS only"
 
 
