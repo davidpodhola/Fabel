@@ -15,6 +15,7 @@ call npm install
 cd ..\..\..
 node tools/fable2babel.js --projFile sample/browser/todomvc/app.fsx
 for /F %%A in ('powershell -Command "(Start-Process -PassThru -FilePath 'node' -ArgumentList 'sample/node/server/app.js 8090').Id"') do set PID=%%A
+timeout /t 1
 build\uitest\Fable.UITests.exe
-timeout /t 10
+timeout /t 1
 taskkill /PID %PID%  
