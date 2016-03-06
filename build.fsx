@@ -35,11 +35,19 @@ Target "NUnitTest" (fun _ ->
             OutputFile = "TestResults.xml" })
 )
 
+let GetFullPath fileName : string =
+    if File.Exists(fileName) then
+        Path.GetFullPath(fileName)
+    else
+      Environment.GetEnvironmentVariable("PATH").Split(';') |> Seq.map ( fun p-> Path.Combine(p, fileName) ) |> Seq.find( fun p->File.Exists(p) )
+
+let npmFilePath =
+    match environVarOrNone "TRAVIS" with
+    | Some _ -> "/home/travis/.nvm/versions/node/v5.0.0/bin/npm" // this is where npm is on Travis now
+    | None -> 
+        if isUnix then NpmHelper.defaultNpmParams.NpmFilePath else GetFullPath "npm.cmd"
+
 Target "MochaTest" (fun _ ->
-    let npmFilePath =
-        match environVarOrNone "TRAVIS" with
-        | Some _ -> "/home/travis/.nvm/versions/node/v5.0.0/bin/npm" // this is where npm is on Travis now
-        | None -> NpmHelper.defaultNpmParams.NpmFilePath
     let buildParam command p =
         { p with NpmHelper.NpmFilePath = npmFilePath
                  NpmHelper.Command = NpmHelper.Run command }
