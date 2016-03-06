@@ -57,7 +57,10 @@ module Naming =
         | _ -> 0
     
     let getCoreLibPath (com: ICompiler) =
-        Path.Combine(com.Options.lib, "fable-core.js")
+        let result = Path.Combine(com.Options.lib, "fable-core.js")
+        if not(File.Exists(result)) then
+          failwith (sprintf "CoreLib fable-core.js on %s not found" result)
+        result
 
     let fromLib (com: ICompiler) path =
         Path.Combine(com.Options.lib, path)
