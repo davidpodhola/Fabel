@@ -204,10 +204,9 @@ try {
     
     // Copy fable-core.js if not present
     if (opts.projFile && opts.lib === "." && !fs.existsSync(path.join(fableCwd, fableCoreLib))) {
-        fs.createReadStream(path.join(fableBinDir, fableCoreLib))
-            .pipe(fs.createWriteStream(path.join(fableCwd, fableCoreLib)));
+        fs.writeFileSync(path.join(fableCwd, fableCoreLib), fs.readFileSync(path.join(fableBinDir+"../../../lib", fableCoreLib)));
     }
-    
+
     // Module target
     if (opts.env === "browser") {
         babelPlugins.push("transform-es2015-modules-amd");
