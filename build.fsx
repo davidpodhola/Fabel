@@ -56,10 +56,16 @@ module Util =
         File.Move(tempFileName, fileName)
 
 module Npm =
+    let GetFullPath fileName : string =
+        if File.Exists(fileName) then
+            Path.GetFullPath(fileName)
+        else
+          Environment.GetEnvironmentVariable("PATH").Split(';') |> Seq.map ( fun p-> Path.Combine(p, fileName) ) |> Seq.find( fun p->File.Exists(p) )
     let npmFilePath =
         if EnvironmentHelper.isUnix
         then "npm"
-        else NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath
+        else 
+          if Environment.Is64BitOperatingSystem then NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath else GetFullPath "npm.cmd"
 
     let script workingDir script args =
         sprintf "run %s -- %s" script (String.concat " " args)
