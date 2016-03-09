@@ -84,17 +84,18 @@ module Util =
       else
         FscHelper.compile fscParams inputFiles
 
-module Npm =
     let GetFullPath fileName : string =
         if File.Exists(fileName) then
             Path.GetFullPath(fileName)
         else
           Environment.GetEnvironmentVariable("PATH").Split(';') |> Seq.map ( fun p-> Path.Combine(p, fileName) ) |> Seq.find( fun p->File.Exists(p) )
+
+module Npm =
     let npmFilePath =
         if EnvironmentHelper.isUnix
         then "npm"
         else         
-          if Environment.Is64BitOperatingSystem then NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath else GetFullPath "npm.cmd" // https://github.com/fsprojects/Fable/issues/54 fix
+          if Environment.Is64BitOperatingSystem then NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath else Util.GetFullPath "npm.cmd" // https://github.com/fsprojects/Fable/issues/54 fix
 
     let script workingDir script args =
         sprintf "run %s -- %s" script (String.concat " " args)
@@ -112,7 +113,8 @@ module Node =
     let nodeFilePath =
         if EnvironmentHelper.isUnix
         then "node"
-        else "./packages/Node.js/node.exe" |> Path.GetFullPath
+        else 
+          if Environment.Is64BitOperatingSystem then "./packages/Node.js/node.exe" |> Path.GetFullPath else Util.GetFullPath "node.exe" // https://github.com/fsprojects/Fable/issues/54 fix
 
     let run workingDir script args =
         let args = sprintf "%s %s" script (String.concat " " args)
