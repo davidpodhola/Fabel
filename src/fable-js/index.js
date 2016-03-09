@@ -1,12 +1,32 @@
 #!/usr/bin/env node
-/* global __dirname */
-/* global process */
 
 var fs = require("fs");
 var path = require("path");
 var babel = require("babel-core");
 var template = require("babel-template");
 var spawn = require('child_process').spawn;
+var commandLineArgs = require('command-line-args');
+
+var appDescription = {
+    title: "Fable",
+    description: "F# to JavaScript compiler",
+    footer: "All arguments but --projFile (default) can be defined in a fableconfig.json file"
+};
+
+var cli = commandLineArgs([
+  { name: 'projFile', defaultOption: true, description: "The F# project (.fsproj) or script (.fsx) to compile." },
+  { name: 'code', description: "Pass a string of code directly to Fable instead." },
+  { name: 'outDir', defaultValue: '.', description: "Where to put compiled JS files." },
+  { name: 'env', description: "'browser' for [bold]{amd} modules and 'node' for [bold]{commonjs} (defaults to [bold]{umd})." },
+  { name: 'lib', defaultValue: '.', description: "Where to find the core library, " +
+                        "if not set [underline]{fable-core.js} will be copied automatically to outDir." },
+  { name: 'symbols', multiple: true, description: "F# symbols for conditional compilation, like 'DEBUG'." },
+  { name: 'plugins', multiple: true, description: "Paths to Fable plugins." },
+  { name: 'babelPlugins', multiple: true, description: "Additional Babel plugins (without 'babel-plugin-' prefix, " +
+                        "like 'angular2-annotations'). Must be installed in the current directory." },
+  { name: 'watch', alias: 'w', type: Boolean, description: "Recompile project much faster on file modifications." },
+  { name: 'help', alias: 'h', description: "Display this usage guide." }
+]);
 
 var fableBin = path.resolve(__dirname, "bin/Fable.exe");
 var fableConfig = "fableconfig.json";
@@ -143,42 +163,51 @@ function babelifyToFile(projDir, projectDir, babelAst) {
     fs.writeFileSync(targetFile + ".map", JSON.stringify(parsed.map));
 }
 
-try {
-    var opts = {
-        lib: ".",
-        outDir: ".",
-        projectDir: ".",
-        symbols: [],
-        plugins: [],
-        watch: false
+function processJson(opts, projectDir, json) {
+    // An empty string is the signal to finish the program
+    if (/^\s*$/.test(json)) {
+        process.exit(0);
     }
     
-    // TODO: Show help if no arguments passed
-
-    for (var i=2; i < process.argv.length; i++) {
-        var key = process.argv[i];
-        if (i == 2 && key.indexOf("--") != 0) {
-            opts.projFile = key;    
+    var err = null;
+    try {
+        var babelAst = JSON.parse(json);
+        if (babelAst.type == "Error") {
+            err = babelAst.message;
         }
         else {
-            key = key.substring(2);
-            if (key == "watch") {
-                opts[key] = true;
-            }
-            else if (Array.isArray(opts[key])) {
-                opts[key].push(process.argv[++i]);
+            if (opts.projFile) {
+                babelifyToFile(projectDir, opts.outDir, babelAst);
+                console.log("Compiled " + path.basename(babelAst.fileName) + " at " + (new Date()).toLocaleTimeString());
             }
             else {
-                opts[key] = process.argv[++i];
+                babelifyToConsole(babelAst);
             }
         }
     }
-    
-    var projectDir;
-    var fableCmd = process.platform === "win32" ? "cmd" : "mono";
-    var fableCmdArgs = process.platform === "win32" ? ["/C", fableBin] : [fableBin];
+    catch (e) {
+        err = e;
+    }
+    if (err != null) {
+        console.log(err);
+        if (!opts.watch) {
+            process.exit(1);
+        }
+    }
+}
 
-    if (typeof opts.projFile === "string") {
+try {
+    var projectDir = ".",
+        opts = cli.parse(),
+        fableCmd = process.platform === "win32" ? "cmd" : "mono",
+        fableCmdArgs = process.platform === "win32" ? ["/C", fableBin] : [fableBin];
+
+    if (opts.help || (!opts.projFile && !opts.code)) {
+        console.log(cli.getUsage(appDescription));
+        process.exit(0);
+    }
+
+    if (opts.projFile) {
         projectDir = path.dirname(path.isAbsolute(opts.projFile)
                     ? opts.projFile
                     : path.join(process.cwd(), opts.projFile));
@@ -208,11 +237,13 @@ try {
                 .pipe(fs.createWriteStream(path.join(opts.outDir, fableCoreLib)));
         }
     }
-    else if (typeof opts.code !== "string") {
-        throw "No correct --projFile or --code argument provided";
-    }
         
-    // Module target
+    // Module target and extra plugins
+    if (opts.babelPlugins) {
+        opts.babelPlugins.forEach(function (x) {
+            babelPlugins.push(require("babel-plugin-" + x));
+        });
+    }
     if (opts.env === "browser") {
         babelPlugins.push(require("babel-plugin-transform-es2015-modules-amd"));
     }
@@ -223,23 +254,14 @@ try {
         babelPlugins.push(require("babel-plugin-transform-es2015-modules-umd"));
     }
     
-    var addArg = function(k, v) {
-        if (v != null) {
-            fableCmdArgs.push("--" + k, v.toString());
-        }
-    };
     for (var k in opts) {
-        if (Array.isArray(opts[k])) {
-            opts[k].forEach(function (v) {
-                addArg(k,v);
-            });
-        }
-        else {
-            addArg(k, opts[k]);
-        }
+        if (Array.isArray(opts[k]))
+            opts[k].forEach(function (v) { fableCmdArgs.push("--" + k, v) })
+        else
+            fableCmdArgs.push("--" + k, opts[k]);
     }
-    console.log(projectDir + "> " + fableCmd + " " + fableCmdArgs.join(" "));
-    
+    // console.log(projectDir + "> " + fableCmd + " " + fableCmdArgs.join(" "));
+        
     var proc = spawn(fableCmd, fableCmdArgs, { cwd: projectDir });
 
     if (opts.watch) {
@@ -263,49 +285,16 @@ try {
 
     var buffer = "";
     proc.stdout.on("data", function(data) {
-        var txt = data.toString();
-        // New lines are parsed as literals \n,
-        // so this complicated RegExp isn't necessary
-        // var json, closing = /\}\n(?![^$\{][\s\S]*")/.exec(txt);
-        var json, closing = txt.indexOf("\n");
-        if (closing == -1) {
-            buffer += txt;
-            return;
-        }
-        else {
-            json = buffer + txt.substring(0, closing + 1);
-            buffer = txt.substring(closing + 1);
-        }
-        
-        // An empty string is the signal to finish the program
-        if (/^\s*$/.test(json)) {
-            console.log("Finished");
-            process.exit(0);
-        }
-        
-        var err = null;
-        try {
-            var babelAst = JSON.parse(json);
-            if (babelAst.type == "Error") {
-                err = babelAst.message;
+        var txt = data.toString(), newLine = 0;
+        while (newLine >= 0) {
+            var newLine = txt.indexOf("\n");
+            if (newLine == -1) {
+                buffer += txt;
             }
             else {
-                if (typeof opts.projFile === "string") {
-                    babelifyToFile(projectDir, opts.outDir, babelAst);
-                    console.log("Compiled " + path.basename(babelAst.fileName) + " at " + (new Date()).toLocaleTimeString());
-                }
-                else {
-                    babelifyToConsole(babelAst);
-                }
-            }
-        }
-        catch (e) {
-            err = e;
-        }
-        if (err != null) {
-            console.log(err);
-            if (!opts.watch) {
-                process.exit(1);
+                processJson(opts, projectDir, buffer + txt.substring(0, newLine));
+                txt = txt.substring(newLine + 1);
+                buffer = "";
             }
         }
     });    
