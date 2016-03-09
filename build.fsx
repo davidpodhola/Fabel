@@ -55,6 +55,35 @@ module Util =
         File.Delete(fileName)
         File.Move(tempFileName, fileName)
 
+    let compileFiles (srcFiles : string list) (opts : string list) : int = 
+      let optsArr = 
+        // If output file name is specified, pass it on to fsc.
+        if Seq.exists (fun e -> e = "-o" || e.StartsWith("--out:")) opts then opts @ srcFiles
+        // But if it's not, then figure out what it should be.
+        else 
+            let outExt = 
+                if Seq.exists (fun e -> e = "-a" || e = "--target:library") opts then ".dll"
+                else ".exe"
+            "-o" :: FileHelper.changeExt outExt (List.head srcFiles) :: opts @ srcFiles
+        |> Array.ofList
+      ExecProcess (fun info ->
+           info.FileName <- (@"fsc.exe")
+           info.Arguments <- String.Concat( optsArr |> Array.filter(fun f -> f <> "--UseFscExe" ) |> Array.map( fun f -> f + " " ) )
+      ) (System.TimeSpan.FromMinutes 5.)
+
+    let compile (fscParams : Fake.FscHelper.FscParam list) (inputFiles : string list) : int = 
+      if String.IsNullOrWhiteSpace(environVarOrDefault "VS140COMNTOOLS" "") then // fix https://github.com/fsprojects/Fable/issues/35
+        let inputFiles = inputFiles |> Seq.toList
+        let taskDesc = inputFiles |> separated ", "
+        let fscParams = if fscParams = [] then Fake.FscHelper.FscParam.Defaults else fscParams
+        let argList = fscParams |> List.map string
+        traceStartTask "Fsc " taskDesc
+        let res = compileFiles inputFiles argList
+        traceEndTask "Fsc " taskDesc
+        res
+      else
+        FscHelper.compile fscParams inputFiles
+
 module Npm =
     let GetFullPath fileName : string =
         if File.Exists(fileName) then
@@ -144,7 +173,7 @@ Target "Plugins" (fun _ ->
     |> Seq.iter (fun fsx ->
         let dllFile = Path.ChangeExtension(Path.GetFileName fsx, ".dll")
         [fsx]
-        |> FscHelper.compile [
+        |> Util.compile [
             FscHelper.Out (Path.Combine(pluginsBuildDir, dllFile))
             FscHelper.Target FscHelper.TargetType.Library
         ]
