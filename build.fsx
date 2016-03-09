@@ -64,8 +64,8 @@ module Npm =
     let npmFilePath =
         if EnvironmentHelper.isUnix
         then "npm"
-        else 
-          if Environment.Is64BitOperatingSystem then NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath else GetFullPath "npm.cmd"
+        else         
+          if Environment.Is64BitOperatingSystem then NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath else GetFullPath "npm.cmd" // https://github.com/fsprojects/Fable/issues/54 fix
 
     let script workingDir script args =
         sprintf "run %s -- %s" script (String.concat " " args)
