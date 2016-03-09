@@ -72,7 +72,7 @@ module Util =
       ) (System.TimeSpan.FromMinutes 5.)
 
     let compile (fscParams : Fake.FscHelper.FscParam list) (inputFiles : string list) : int = 
-      if String.IsNullOrWhiteSpace(environVarOrDefault "VS140COMNTOOLS" "") then // fix https://github.com/fsprojects/Fable/issues/35
+      if not(EnvironmentHelper.isUnix) && String.IsNullOrWhiteSpace(environVarOrDefault "VS140COMNTOOLS" "") then // fix https://github.com/fsprojects/Fable/issues/35 (on Windows only!)
         let inputFiles = inputFiles |> Seq.toList
         let taskDesc = inputFiles |> separated ", "
         let fscParams = if fscParams = [] then Fake.FscHelper.FscParam.Defaults else fscParams
