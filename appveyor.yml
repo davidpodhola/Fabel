@@ -1,6 +1,7 @@
 environment:
   matrix:
-  - os: Visual Studio 2015  
+  - os: Visual Studio 2015
+  - os: Windows Server 2012 R2  
 
 init:
   - git config --global core.autocrlf input
