@@ -1,5 +1,6 @@
 environment:
   matrix:
+  fast_finish: true
   - os: Visual Studio 2015
   - os: Windows Server 2012 R2  
 
