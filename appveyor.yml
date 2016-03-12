@@ -1,10 +1,13 @@
+environment:
+  matrix:
+  - os: Visual Studio 2015  
+
 init:
   - git config --global core.autocrlf input
 
 build:
   verbosity: detailed
 
-os: Visual Studio 2015
 before_build:
   - cmd: set PATH=C:\Program Files (x86)\MSBuild\14.0\Bin;%PATH%
 build_script:
