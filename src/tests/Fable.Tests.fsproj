@@ -41,7 +41,7 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Util.fs" />
+    <Compile Include="Util/Util.fs" />
     <Compile Include="ArithmeticTests.fs" />
     <Compile Include="ArrayTests.fs" />
     <Compile Include="AsyncTests.fs" />
@@ -49,6 +49,7 @@
     <Compile Include="DictionaryTests.fs" />
     <Compile Include="ListTests.fs" />
     <Compile Include="MapTests.fs" />
+    <Compile Include="MiscTests.fs" />
     <Compile Include="ObservableTests.fs" />
     <Compile Include="RecordTypeTests.fs" />
     <Compile Include="RegexTests.fs" />

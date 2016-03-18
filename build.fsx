@@ -2,19 +2,17 @@
 
 open System
 open System.IO
+open System.Text.RegularExpressions
 open Fake
 
-// Directories
-let fableBuildDir = "build/fable/bin"
-let testsBuildDir = "build/tests"
-let pluginsBuildDir = "build/plugins"
-let samplesBuildDir = "build/samples"
-
 // version info
-let version = "0.0.8"  // or retrieve from CI server
+let version = "0.0.15"  // or retrieve from CI server
 
 module Util =
     open System.Net
+    
+    let join pathParts =
+        Path.Combine(Array.ofSeq pathParts)
 
     let run workingDir fileName args =
         let ok = 
@@ -56,32 +54,33 @@ module Util =
         File.Move(tempFileName, fileName)
 
 module Npm =
-    let npmFilePath =
+    let npmFilePath args =
         if EnvironmentHelper.isUnix
-        then "npm"
-        else NpmHelper.defaultNpmParams.NpmFilePath |> Path.GetFullPath
+        then "npm", args
+        else "cmd", ("/C npm " + args)
 
     let script workingDir script args =
         sprintf "run %s -- %s" script (String.concat " " args)
-        |> Util.run workingDir npmFilePath
+        |> npmFilePath ||> Util.run workingDir
 
     let install workingDir modules =
         sprintf "install %s" (String.concat " " modules)
-        |> Util.run workingDir npmFilePath
+        |> npmFilePath ||> Util.run workingDir
 
     let command workingDir command args =
         sprintf "%s %s" command (String.concat " " args)
-        |> Util.run workingDir npmFilePath
+        |> npmFilePath ||> Util.run workingDir
         
 module Node =
-    let nodeFilePath =
-        if EnvironmentHelper.isUnix
-        then "node"
-        else "./packages/Node.js/node.exe" |> Path.GetFullPath
-
     let run workingDir script args =
         let args = sprintf "%s %s" script (String.concat " " args)
-        Util.run workingDir nodeFilePath args
+        Util.run workingDir "node" args
+
+// Directories
+let fableBuildDir = Util.join ["build";"fable";"bin"]
+let testsBuildDir = Util.join ["build";"tests"]
+let pluginsBuildDir = Util.join ["build";"plugins"]
+let samplesBuildDir = Util.join ["build";"samples"]
 
 // Targets
 Target "Clean" (fun _ ->
@@ -120,16 +119,11 @@ Target "NUnitTest" (fun _ ->
 )
 
 Target "MochaTest" (fun _ ->
+    let fableDir = Util.join ["build";"fable"] |> Path.GetFullPath
     let testsBuildDir = Path.GetFullPath testsBuildDir
-    Node.run "build/fable" "." [
-        Path.GetFullPath "src/tests/Fable.Tests.fsproj"
-        "--outDir"; testsBuildDir
-        "--plugins"; Path.GetFullPath "build/plugins/Fable.Plugins.NUnit.dll"
-        ]
-    Npm.install testsBuildDir ["mocha"]
-    Path.Combine(testsBuildDir, "node_modules/mocha/bin/mocha")
-    |> Path.GetFullPath
-    |> Node.run testsBuildDir <| ["."]
+    FileUtils.cp_r "src/tests" testsBuildDir
+    Npm.install testsBuildDir []
+    Node.run testsBuildDir fableDir []
 )
 
 Target "Plugins" (fun _ ->
@@ -150,17 +144,18 @@ Target "Samples" (fun _ ->
         ++ "samples/**/node_modules/"
         ++ "samples/**/bin/" ++ "samples/**/obj/"
     |> CleanDirs
+    let fableDir = Util.join ["build";"fable"] |> Path.GetFullPath
     let samplesBasePath = Path.GetFullPath "samples"
     let samplesBuilDir = Path.GetFullPath samplesBuildDir
     
-    !! "samples/**/*.fsproj" ++ "samples/**/index.fsx"
+    !! "samples/**/fableconfig.json"
     |> Seq.iter (fun path ->
         let pathDir = Path.GetDirectoryName path
         let outDir = pathDir.Replace(samplesBasePath, samplesBuildDir)
         FileUtils.cp_r pathDir outDir
         if Path.Combine(outDir, "package.json") |> File.Exists then
             Npm.install outDir []
-        Node.run "build/fable" "." [Path.Combine(outDir, Path.GetFileName path) |> Path.GetFullPath]
+        Node.run outDir fableDir []
     )
 )
 
@@ -175,6 +170,26 @@ Target "Publish" (fun _ ->
     Util.convertFileToUnixLineBreaks (Path.Combine(workingDir, "index.js"))
     Npm.command workingDir "version" [version]
     Npm.command workingDir "publish" []
+)
+
+Target "Import" (fun _ ->
+    !! "import/core/Fable.Import.fsproj"
+    |> MSBuildRelease "import/core" "Build"
+    |> Log "Import-Output: "
+)
+
+Target "CleanSamples" (fun _ ->
+    !! "/samples/**/*.js.map"
+    |> Seq.where (fun file -> not(file.Contains "node_modules"))
+    |> Seq.iter FileUtils.rm
+
+    !! "/samples/**/*.js"
+    |> Seq.where (fun file -> not(file.Contains "node_modules"))
+    |> Seq.where (fun file ->
+        Regex.IsMatch(file,"(?:bundle|fable-core)\.js$")
+        || File.Exists(Path.ChangeExtension(file, ".fs"))
+        || File.Exists(Path.ChangeExtension(file, ".fsx")))
+    |> Seq.iter FileUtils.rm
 )
 
 Target "All" ignore

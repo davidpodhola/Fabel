@@ -39,6 +39,12 @@ module Naming =
     
     let ignoredCompilerGenerated =
         set [ "CompareTo"; "Equals"; "GetHashCode" ]
+        
+    let ignoredFilesRegex =
+        Regex(@"Fable\.(?:Import|Core)[\w.]*\.fs$")
+        
+    let identForbiddenCharsRegex =
+        Regex @"^[^a-zA-Z_$]|[^0-9a-zA-Z_$]"
     
     let removeParens, removeGetSetPrefix, sanitizeActivePattern =
         let reg1 = Regex(@"^\( (.*) \)$")
@@ -54,18 +60,17 @@ module Naming =
     let normalizePath (path: string) =
         path.Replace("\\", "/")
     
-    let getCoreLibPath (com: ICompiler) =
-        Path.Combine(com.Options.lib, "fable-core.js") |> normalizePath
-
     let fromLib (com: ICompiler) path =
         Path.Combine(com.Options.lib, path) |> normalizePath
+
+    let getCoreLibPath (com: ICompiler) =
+        Path.Combine(com.Options.lib, "fable-core.js") |> normalizePath
 
     // TODO: Use $F for CoreLib?
     let getImportModuleIdent i = sprintf "$M%i" (i+1)
     
-    let identForbiddenChars =
-        Regex @"^[^a-zA-Z_$]|[^0-9a-zA-Z_$]"
-        
+    let getCurrentModuleIdent () = "$M0"
+    
     let trimDots (s: string) =
         match s.StartsWith ".", s.EndsWith "." with
         | true, true -> s.Substring(1, s.Length - 2)
@@ -79,7 +84,8 @@ module Naming =
             "else"; "enum"; "export"; "extends"; "false"; "final"; "finally"; "float"; "for"; "function"; "goto"; "if"; "implements"; "import"; "in"; "instanceof"; "int"; "interface";
             "let"; "long"; "native"; "new"; "null"; "package"; "private"; "protected"; "public"; "return"; "self"; "short"; "static"; "super"; "switch"; "synchronized";
             "this"; "throw"; "throws"; "transient"; "true"; "try"; "typeof"; "undefined"; "var"; "void"; "volatile"; "while"; "with"; "yield" ]
-        
+
+    // TODO: Check it doesn't conflict with the pattern ^\$M\d+$ for modules
     let sanitizeIdent conflicts name =
         let preventConflicts conflicts name =
             let rec check n =
@@ -88,7 +94,7 @@ module Naming =
             check 0
         // Replace Forbidden Chars
         let sanitizedName =
-            identForbiddenChars.Replace(removeParens name, "_")
+            identForbiddenCharsRegex.Replace(removeParens name, "_")
         // Check if it's a keyword
         jsKeywords.Contains sanitizedName
         |> function true -> "_" + sanitizedName | false -> sanitizedName

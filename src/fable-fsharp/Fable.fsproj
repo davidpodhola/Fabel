@@ -22,6 +22,8 @@
     <WarningLevel>3</WarningLevel>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>true</Prefer32Bit>
+    <StartArguments>--projFile ./Fable.Tests.fsproj --plugins ../plugins/Fable.Plugins.NUnit.dll</StartArguments>
+    <StartWorkingDirectory>C:\git\Fable\build\tests\</StartWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>

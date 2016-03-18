@@ -1,5 +1,7 @@
 # Personal
 .vscode/
+import/core/FSharp.Core.dll
+import/core/Fable.Import.dll.*
 
 # Node
 node_modules/
@@ -91,7 +93,7 @@ _TeamCity*
 .*crunch*.local.xml
 
 # Installshield output folder
-[Ee]xpress/
+#[Ee]xpress/
 
 # DocProject is a documentation generator add-in
 DocProject/buildhelp/

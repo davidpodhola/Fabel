@@ -62,13 +62,13 @@ module Util =
         Babel.Identifier name
         
     let sanitizeName propName: Babel.Expression * bool =
-        if Naming.identForbiddenChars.IsMatch propName
+        if Naming.identForbiddenCharsRegex.IsMatch propName
         then upcast Babel.StringLiteral propName, true
         else upcast Babel.Identifier propName, false
 
     let sanitizeProp com ctx = function
         | Fable.Value (Fable.StringConst name)
-            when Naming.identForbiddenChars.IsMatch name = false ->
+            when Naming.identForbiddenCharsRegex.IsMatch name = false ->
             Babel.Identifier (name) :> Babel.Expression, false
         | TransformExpr com ctx property -> property, true
 
@@ -390,7 +390,7 @@ module Util =
                 transformExpr com ctx body |> U2.Case2
         args, body
         
-    let transformClass com ctx classRange baseClass decls =
+    let transformClass com ctx classIdent classRange baseClass decls =
         let declareMember range kind name args body isStatic hasRestParams =
             let name, computed = sanitizeName name
             let args, body = getMemberArgs com ctx args body hasRestParams
@@ -410,7 +410,7 @@ module Util =
             | Fable.EntityDeclaration _ as decl ->
                 failwithf "Unexpected declaration in class: %A" decl)
         |> List.map U2<_,Babel.ClassProperty>.Case1
-        |> fun meths -> Babel.ClassExpression(classRange, Babel.ClassBody(classRange, meths), ?super=baseClass)
+        |> fun meths -> Babel.ClassExpression(classRange, Babel.ClassBody(classRange, meths), classIdent, ?super=baseClass)
 
     let declareInterfaces (com: IBabelCompiler) ctx (ent: Fable.Entity) isClass =
         // TODO: For now, we're ignoring compiler generated interfaces for union and records
@@ -460,30 +460,19 @@ module Util =
     let declareClass com ctx modIdent (ent: Fable.Entity) entDecls entRange baseClass isClass =
         let classDecl =
             // Don't create a new context for class declarations
-            transformClass com ctx entRange baseClass entDecls
+            transformClass com ctx (identFromName ent.Name) entRange baseClass entDecls
             |> declareModMember entRange ent.Name ent.IsPublic modIdent
         match declareInterfaces com ctx ent isClass with
         | None -> [classDecl]
         | Some ifcDecl -> ifcDecl::[classDecl]
 
     let rec transformModule com ctx (ent: Fable.Entity) entDecls entRange =
-        let protectedIdent =
-            let memberNames =
-                entDecls |> Seq.choose (function
-                    | Fable.EntityDeclaration (ent,_,_) -> Some ent.Name
-                    | Fable.ActionDeclaration _ -> None
-                    | Fable.MemberDeclaration m ->
-                        match m.Kind with
-                        | Fable.Method name | Fable.Getter (name, _) -> Some name
-                        | Fable.Constructor | Fable.Setter _ -> None)
-                |> Set.ofSeq
-            // Protect module identifier against members with same name
-            Babel.Identifier (Naming.sanitizeIdent memberNames.Contains ent.Name)
+        let modIdent = identFromName <| Naming.getCurrentModuleIdent()
         let modDecls =
             let ctx = { ctx with moduleFullName = ent.FullName }
-            transformModDecls com ctx (Some protectedIdent) entDecls
+            transformModDecls com ctx (Some modIdent) entDecls
         Babel.CallExpression(
-            Babel.FunctionExpression([protectedIdent],
+            Babel.FunctionExpression([modIdent],
                 Babel.BlockStatement (modDecls, ?loc=Some entRange),
                 ?loc=Some entRange),
             [U2.Case1 (upcast Babel.ObjectExpression [])],
@@ -559,12 +548,13 @@ module Util =
 module Compiler =
     open Util
 
-    let transformFiles (com: ICompiler) (files: Fable.File list) =
-        let com = makeCompiler com files
-        files
-        |> Seq.filter (fun file -> not(List.isEmpty file.Declarations))
-        |> Seq.map (fun file ->
+    let transformFile (com: ICompiler) (accFiles: Fable.File list) =
+        match accFiles with
+        | [] -> None
+        | file::_ when List.isEmpty file.Declarations -> None
+        | file::_ ->
             try
+                let com = makeCompiler com accFiles
                 let ctx = {
                     file = file.FileName
                     moduleFullName = file.Root.FullName
@@ -600,5 +590,6 @@ module Compiler =
                         |> U2.Case2
                         |> consBack acc) rootDecls
                 Babel.Program (file.FileName, file.Range, rootDecls)
+                |> Some
             with
-            | ex -> failwithf "%s (%s)" ex.Message file.FileName)
+            | ex -> failwithf "%s (%s)" ex.Message file.FileName

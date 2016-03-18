@@ -39,9 +39,11 @@ let private (|BaseCons|_|) com ctx = function
         let methOwnerName (meth: FSharpMemberOrFunctionOrValue) =
             sanitizeEntityName meth.EnclosingEntity
         match ctx.baseClass with
-        | Some baseFullName when isConstructor meth && (methOwnerName meth) = baseFullName ->
+        | Some baseFullName when meth.DisplayName = "( .ctor )"
+                            && (methOwnerName meth) = baseFullName ->
             if not meth.IsImplicitConstructor then
-                failwithf "Inheritance is only possible with base class implicit constructor: %s" baseFullName
+                failwithf "Inheritance is only possible with base class implicit constructor: %s"
+                          baseFullName
             Some (meth, args)
         | _ -> None
     | _ -> None
@@ -148,7 +150,7 @@ let rec private transformExpr (com: IFableCompiler) ctx fsExpr =
         then Fable.This |> Fable.Value
         // External entities contain functions that will be replaced,
         // when they appear as a stand alone values, they must be wrapped in a lambda
-        elif isExternalEntity com v.EnclosingEntity
+        elif isReplaceCandidate com v.EnclosingEntity
         then wrapInLambda com ctx fsExpr v
         else
             v.Attributes
@@ -305,8 +307,16 @@ let rec private transformExpr (com: IFableCompiler) ctx fsExpr =
                             | Naming.StartsWith "get_" _ -> Fable.Getter (name, false)
                             | Naming.StartsWith "set_" _ -> Fable.Setter name
                             | _ -> Fable.Method name
-                        Fable.Member(kind, range, args', transformExpr com ctx over.Body,
-                            [], true, false, hasRestParams args)))
+                        // TODO: FSharpObjectExprOverride.CurriedParameterGroups doesn't offer
+                        // information about ParamArray, we need to check the source method.
+                        // Improve the way to do it.
+                        let hasRestParams =
+                            typ.TypeDefinition.MembersFunctionsAndValues
+                            |> Seq.tryFind (fun x -> x.DisplayName = over.Signature.Name)
+                            |> function Some m -> hasRestParams m | None -> false
+                        Fable.Member(kind, range, args',
+                                     transformExpr com ctx over.Body,
+                                     hasRestParams = hasRestParams)))
                 |> List.concat
             let interfaces =
                 objType::(otherOverrides |> List.map fst)
@@ -322,7 +332,7 @@ let rec private transformExpr (com: IFableCompiler) ctx fsExpr =
     | BasicPatterns.NewRecord(NonAbbreviatedType fsType, argExprs) ->
         let recordType, range = makeType com ctx fsType, makeRange fsExpr.Range
         let argExprs = argExprs |> List.map (transformExpr com ctx)
-        if isExternalEntity com fsType.TypeDefinition
+        if isReplaceCandidate com fsType.TypeDefinition
         then replace com ctx fsExpr (recordType.FullName) ".ctor" ([],[],[]) (None,argExprs)
         else Fable.Apply (makeTypeRef com range recordType, argExprs, Fable.ApplyCons,
                         makeType com ctx fsExpr.Type, Some range)
@@ -357,7 +367,7 @@ let rec private transformExpr (com: IFableCompiler) ctx fsExpr =
                 // Include Tag name in args
                 let tag = makeConst unionCase.Name
                 tag::(List.map (transformExpr com ctx) argExprs)
-            if isExternalEntity com fsType.TypeDefinition
+            if isReplaceCandidate com fsType.TypeDefinition
             then replace com ctx fsExpr (unionType.FullName) ".ctor" ([],[],[]) (None,argExprs)
             else Fable.Apply (makeTypeRef com range unionType, argExprs, Fable.ApplyCons,
                             makeType com ctx fsExpr.Type, Some range)
@@ -415,7 +425,7 @@ let rec private transformExpr (com: IFableCompiler) ctx fsExpr =
                 let lambda =
                     Fable.Lambda (targetVars, com.Transform targetCtx targetExpr)
                     |> Fable.Value
-                let ctx, ident = bindIdent ctx lambda.Type (sprintf "target%i" k)
+                let ctx, ident = bindIdent ctx lambda.Type None (sprintf "$target%i" k)
                 ctx, Map.add k (ident, lambda) acc) (ctx, Map.empty<_,_>)
         let decisionTargets =
             targetRefsCount |> Map.map (fun k v ->
@@ -524,10 +534,11 @@ type private DeclInfo(init: Fable.Declaration list) =
 let private transformMemberDecl (com: IFableCompiler) ctx (declInfo: DeclInfo)
     (meth: FSharpMemberOrFunctionOrValue) (args: FSharpMemberOrFunctionOrValue list list) (body: FSharpExpr) =
     match meth with
-    | meth when declInfo.IsIgnoredMethod meth -> ()
+    | meth when declInfo.IsIgnoredMethod meth -> ctx
     | meth when isInline meth ->
-        let args = args |> Seq.collect id |> Seq.map (fun x -> x.DisplayName)
-        com.AddInlineExpr meth.FullName (List.ofSeq args, body)
+        let args = args |> Seq.collect id |> Seq.toList
+        com.AddInlineExpr meth.FullName (args, body)
+        ctx
     | _ ->
         let memberKind =
             let name = sanitizeMethodName com meth
@@ -537,27 +548,36 @@ let private transformMemberDecl (com: IFableCompiler) ctx (declInfo: DeclInfo)
                  | 'P' -> Fable.Getter (name, true)
                  | _ -> Fable.Method name
             else getMemberKind name meth
-        let ctx, args' = getMethodArgs com ctx meth.IsInstanceMember args
+        let ctx', args' = getMethodArgs com ctx meth.IsInstanceMember args
         let body =
-            let ctx =
+            let ctx' =
                 match meth.IsImplicitConstructor, declInfo.TryGetOwner meth with
                 | true, Some(EntityKind(Fable.Class(Some(fullName, _)))) ->
-                    { ctx with baseClass = Some fullName }
-                | _ -> ctx
-            transformExpr com ctx body
-        let entMember = 
+                    { ctx' with baseClass = Some fullName }
+                | _ -> ctx'
+            transformExpr com ctx' body
+        let entMember =
             Fable.Member(memberKind,
                 makeRange meth.DeclarationLocation, args', body,
                 meth.Attributes |> Seq.choose (makeDecorator com) |> Seq.toList,
-                meth.Accessibility.IsPublic, not meth.IsInstanceMember, hasRestParams args)
+                meth.Accessibility.IsPublic, not meth.IsInstanceMember, hasRestParams meth)
             |> Fable.MemberDeclaration
         declInfo.AddMethod (meth, entMember)
-    declInfo
+        // Bind sanitized module member names to context to prevent
+        // name clashes (they will become variables in JS)
+        match memberKind with
+        | Fable.Method name | Fable.Getter (name, _)
+            when meth.EnclosingEntity.IsFSharpModule ->
+            Naming.sanitizeIdent (fun _ -> false) name
+            |> bindIdent ctx Fable.UnknownType None |> fst
+        | _ -> ctx
+    |> fun ctx -> declInfo, ctx
    
 let rec private transformEntityDecl
     (com: IFableCompiler) ctx (declInfo: DeclInfo) (ent: FSharpEntity) subDecls =
-    if declInfo.IsIgnoredEntity ent
-    then declInfo.AddIgnoredChild ent; declInfo
+    if declInfo.IsIgnoredEntity ent then
+        declInfo.AddIgnoredChild ent
+        declInfo, ctx
     else
         // Unions and Records don't have a constructor, generate it
         let init =
@@ -573,22 +593,34 @@ let rec private transformEntityDecl
             else []
         let childDecls = transformDeclarations com ctx init subDecls
         declInfo.AddChild (com, ent, childDecls)
-        declInfo
+        // Bind sanitized entity name to context to prevent
+        // name clashes (it will become a variable in JS)
+        let ctx, _ =
+            ent.DisplayName
+            |> Naming.sanitizeIdent (fun _ -> false)
+            |> bindIdent ctx Fable.UnknownType None
+        declInfo, ctx
 
 and private transformDeclarations (com: IFableCompiler) ctx init decls =
-    let declInfo =
-        decls |> List.fold (fun (declInfo: DeclInfo) decl ->
+    let declInfo, _ =
+        decls |> List.fold (fun (declInfo: DeclInfo, ctx) decl ->
             match decl with
             | FSharpImplementationFileDeclaration.Entity (e, sub) ->
                 if e.IsFSharpAbbreviation
-                then declInfo
+                then declInfo, ctx
                 else transformEntityDecl com ctx declInfo e sub
             | FSharpImplementationFileDeclaration.MemberOrFunctionOrValue (meth, args, body) ->
                 transformMemberDecl com ctx declInfo meth args body
             | FSharpImplementationFileDeclaration.InitAction (Transform com ctx e as fe) ->
-                declInfo.AddInitAction (Fable.ActionDeclaration (e, makeRange fe.Range)); declInfo
-        ) (DeclInfo init)
+                declInfo.AddInitAction (Fable.ActionDeclaration (e, makeRange fe.Range))
+                declInfo, ctx
+        ) (DeclInfo init, ctx)
     declInfo.GetDeclarations()
+    
+// Make inlineExprs static so they can be reused in --watch compilations
+let private inlineExprs =
+    System.Collections.Concurrent.ConcurrentDictionary<
+        string, FSharpMemberOrFunctionOrValue list * FSharpExpr>()
         
 let transformFiles (com: ICompiler) (fileMask: string option) (fsProj: FSharpCheckProjectResults) =
     let rec getRootDecls rootEnt = function
@@ -596,13 +628,11 @@ let transformFiles (com: ICompiler) (fileMask: string option) (fsProj: FSharpChe
             when e.IsNamespace || e.IsFSharpModule ->
             getRootDecls (Some e) subDecls
         | _ as decls -> rootEnt, decls
-    let entities, inlineExprs =
-        System.Collections.Concurrent.ConcurrentDictionary<string, Fable.Entity>(),
-        System.Collections.Concurrent.ConcurrentDictionary<string, string list * FSharpExpr>()
+    let entities =
+        System.Collections.Concurrent.ConcurrentDictionary<string, Fable.Entity>()
     let fileNames =
         fsProj.AssemblyContents.ImplementationFiles
         |> Seq.map (fun x -> x.FileName)
-        |> Seq.where (fun file -> (System.IO.Path.GetFileName file) <> "Fable.Core.fs")
         |> Set.ofSeq
     let replacePlugins =
         com.Plugins |> List.choose (function
@@ -627,7 +657,9 @@ let transformFiles (com: ICompiler) (fileMask: string option) (fsProj: FSharpChe
                 let success, expr = inlineExprs.TryGetValue fullName
                 if success then Some expr else None
             member fcom.AddInlineExpr fullName inlineExpr =
-                inlineExprs.TryAdd(fullName, inlineExpr)
+                inlineExprs.AddOrUpdate(fullName,
+                    System.Func<_,_>(fun _ -> inlineExpr),
+                    System.Func<_,_,_>(fun _ _ -> inlineExpr))
                 |> ignore
             member fcom.ReplacePlugins =
                 replacePlugins
@@ -635,22 +667,19 @@ let transformFiles (com: ICompiler) (fileMask: string option) (fsProj: FSharpChe
             member __.Options = com.Options
             member __.Plugins = com.Plugins }
     fsProj.AssemblyContents.ImplementationFiles
-    |> List.where (fun file ->
-        // Fable.Import files are not considered external (the methods are not replaced)
-        // but we ignore them for compilation
-        ((System.IO.Path.GetFileName file.FileName).StartsWith("Fable.Import") |> not)
-        && fileNames.Contains file.FileName)
-    |> List.map (fun file ->
+    |> Seq.where (fun file ->
+        not (Naming.ignoredFilesRegex.IsMatch file.FileName))
+    |> Seq.scan (fun acc file ->
         try
             let rootEnt, rootDecls =
                 let rootEnt, rootDecls =
                     let rootEnt, rootDecls = getRootDecls None file.Declarations
                     match fileMask with
-                    | Some mask when file.FileName <> mask -> rootEnt, []
+                    | Some mask when (Naming.normalizePath file.FileName) <> mask -> rootEnt, []
                     | _ -> rootEnt, transformDeclarations com Context.Empty [] rootDecls
                 match rootEnt with
                 | Some rootEnt -> makeEntity com rootEnt, rootDecls
                 | None -> Fable.Entity.CreateRootModule file.FileName, rootDecls
-            Fable.File(file.FileName, rootEnt, rootDecls)
+            Fable.File(file.FileName, rootEnt, rootDecls)::acc
         with
-        | ex -> failwithf "%s (%s)" ex.Message file.FileName)
+        | ex -> failwithf "%s (%s)" ex.Message file.FileName) []
