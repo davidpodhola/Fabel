@@ -24,8 +24,8 @@
   };
   
   exports.Choice = function Choice(t, d) {
-    this.tag = t;
-    this.data0 = d;
+    this.Case = t;
+    this.Fields = [d];
   };
 
   var Util = exports.Util = {};
@@ -53,6 +53,32 @@
     return restArgs;
   };
   Util.compareTo = function (x, y) {
+    function sortIfMapOrSet (o) {
+      return o instanceof Map || o instanceof Set ? Array.from(o).sort() : o;
+    }
+    if (typeof x != typeof y) {
+      return -1;
+    }    
+    if (x != null && y != null && typeof x == "object" && typeof y == "object") {
+      var lengthComp;
+      if (Object.getPrototypeOf(x) != Object.getPrototypeOf(y)) {
+        return -1;
+      }
+      if (x[Symbol.iterator] && y[Symbol.iterator]) {
+        lengthComp = Util.compareTo(Seq.length(x), Seq.length(y));
+        return lengthComp != 0 ? lengthComp : Seq.fold2(function (prev, v1, v2) {
+          return prev != 0 ? prev : Util.compareTo(v1, v2);
+        }, 0, sortIfMapOrSet(x), sortIfMapOrSet(y));
+      }
+      if (x instanceof Date && y instanceof Date) {
+          return x < y ? -1 : (x > y ? 1 : 0);
+      }      
+      var keys1 = Object.getOwnPropertyNames(x), keys2 = Object.getOwnPropertyNames(y);
+      lengthComp = Util.compareTo(keys1.length, keys2.length);
+      return lengthComp != 0 ? lengthComp : Seq.fold2(function (prev, k1, k2) {
+        return prev != 0 ? prev : Util.compareTo(x[k1], y[k2]);
+      }, 0, keys1.sort(), keys2.sort());
+    }
     return x < y ? -1 : (x > y ? 1 : 0);
   };
   Util.createObj = function (fields) {
@@ -60,7 +86,7 @@
       acc[kv[0]] = kv[1];
       return acc;
     }, {}, fields);
-  }
+  };
 
   var TimeSpan = exports.TimeSpan = {};
   TimeSpan.create = TimeSpan.fromTicks = function () {
@@ -234,7 +260,7 @@
     }
     return day;
   };
-  FDate.add = FDate["+"] = function (d, ts) {
+  FDate.add = FDate.op_Addition = function (d, ts) {
     return FDate.parse(d.getTime() + ts, d.kind);
   };
   FDate.addDays = function (d, v) {
@@ -283,7 +309,7 @@
     return FDate.create(newYear, newMonth, newDay,
         FDate.hour(d), FDate.minute(d), FDate.second(d), FDate.millisecond(d), d.kind);
   };
-  FDate.subtract = FDate["-"] = function (d, that) {
+  FDate.subtract = FDate.op_Subtraction = function (d, that) {
     return typeof that == "number"
       ? FDate.parse(d.getTime() - that, d.kind)
       : d.getTime() - that.getTime();
@@ -306,18 +332,34 @@
   FDate.compareTo = FDate.compare = Util.compareTo;
 
   var FString = exports.String = {};
-  FString.fsFormatRegExp = /%[+\-* ]?\d*(?:\.(\d+))?(\w)/;
+  FString.fsFormatRegExp = /%([0+ ]*)(-?\d+)?(?:\.(\d+))?(\w)/;
   FString.fsFormat = function (str) {
-    var _cont;
+    function isObject(x) {
+      return x !== null && typeof x === 'object'
+        && !(x instanceof Number) && !(x instanceof String) && !(x instanceof Boolean); 
+    };
     function formatOnce(str, rep) {
-      return str.replace(FString.fsFormatRegExp, function (_, precision, format) {
+      return str.replace(FString.fsFormatRegExp, function (_, flags, pad, precision, format) {
         switch (format) {
-          case "f": case "F": return precision ? rep.toFixed(precision) : rep.toFixed(6);
-          case "g": case "G": return rep.toPrecision(precision);
-          case "e": case "E": return rep.toExponential(precision);
-          case "A": return JSON.stringify(rep);
-          default: return rep;
+          case "f": case "F": rep = rep.toFixed(precision || 6); break;
+          case "g": case "G": rep = rep.toPrecision(precision); break;
+          case "e": case "E": rep = rep.toExponential(precision); break;
+          case "A":
+            rep = ( (rep instanceof Map) ? "map " : 
+                    (rep instanceof Set) ? "set " : "") + JSON.stringify(rep, function(k, v) {
+                    return v && v[Symbol.iterator] 
+                             && !Array.isArray(v) 
+                             && isObject(v)
+                             ? Array.from(v) : v;
+                  });
+            break;
         }
+        var plusPrefix = flags.indexOf('+') >= 0 && parseInt(rep) >= 0;
+        if (!isNaN(pad = parseInt(pad))) {
+          var ch = pad >= 0 && flags.indexOf('0') >= 0 ? '0' : ' ';
+          rep = FString.padLeft(rep, Math.abs(pad) - (plusPrefix ? 1 : 0), ch, pad < 0);
+        }
+        return plusPrefix ? "+" + rep : rep;
       });
     }
     function makeFn(str) {
@@ -327,6 +369,7 @@
                 ? makeFn(str2) : _cont(str2);
       }
     }
+    var _cont;
     return function (cont) {
       _cont = cont;
       return FString.fsFormatRegExp.test(str)
@@ -336,77 +379,70 @@
   FString.formatRegExp = /\{(\d+)(,-?\d+)?(?:\:(.+?))?\}/g;
   FString.format = function (str, args) {
     args = Util.getRestParams(arguments, 1);
-    return str.replace(FString.formatRegExp, function (match, idx, alignment, format) {
+    return str.replace(FString.formatRegExp, function (match, idx, pad, format) {
       var rep = args[idx];
-      if (rep != null && format != null) {
-        if (typeof rep === 'number') {
-          switch (format.substring(0, 1)) {
-            case "f":
-            case "F":
-              return format.length > 1
-                      ? rep.toFixed(format.substring(1))
-                      : rep.toFixed(2);
-            case "g":
-            case "G":
-              return format.length > 1
-                      ? rep.toPrecision(format.substring(1))
-                      : rep.toPrecision();
-            case "e":
-            case "E":
-              return format.length > 1
-                      ? rep.toExponential(format.substring(1))
-                      : rep.toExponential();
-            case "p":
-            case "P":
-              return (format.length > 1
-                      ? (rep * 100).toFixed(format.substring(1))
-                      : (rep * 100).toFixed(2)) + " %";
+      if (typeof rep === 'number') {
+        switch ((format || '').substring(0, 1)) {
+          case "f": case "F":
+            rep = format.length > 1 ? rep.toFixed(format.substring(1)) : rep.toFixed(2);
+            break;
+          case "g": case "G":
+            rep = format.length > 1 ? rep.toPrecision(format.substring(1)) : rep.toPrecision();
+            break;
+          case "e": case "E":
+            rep = format.length > 1 ? rep.toExponential(format.substring(1)) : rep.toExponential();
+            break;
+          case "p": case "P":
+            rep = (format.length > 1 ? (rep * 100).toFixed(format.substring(1)) : (rep * 100).toFixed(2)) + " %";
+            break;
+        }
+      }
+      else if (rep instanceof Date) {
+        if (format.length === 1) {
+          switch (format) {
+            case "D": rep = rep.toDateString(); break;
+            case "T": rep = rep.toLocaleTimeString(); break;
+            case "d": rep = rep.toLocaleDateString(); break;
+            case "t": rep = rep.toLocaleTimeString().replace(/:\d\d(?!:)/, ''); break;
           }
         }
-        else if (rep instanceof Date) {
-          if (format.length === 1) {
-            switch (format) {
-              case "D": return rep.toDateString();
-              case "T": return rep.toLocaleTimeString();
-              case "d": return rep.toLocaleDateString();
-              case "t": return rep.toLocaleTimeString().replace(/:\d\d(?!:)/, '');
-            }
+        rep = format.replace(/\w+/g, function (match2) {
+          var rep2 = match2;
+          switch (match2.substring(0, 1)) {
+            case "y":
+              rep2 = match2.length < 4
+                      ? FDate.year(rep) % 100
+                      : FDate.year(rep);
+              break;
+            case "h":
+              rep2 = rep.getHours() > 12
+                      ? FDate.hour(rep) % 12
+                      : FDate.hour(rep);
+              break;
+            case "M":
+              rep2 = FDate.month(rep);
+              break;
+            case "d":
+              rep2 = FDate.day(rep);
+              break;
+            case "H":
+              rep2 = FDate.hour(rep);
+              break;
+            case "m":
+              rep2 = FDate.minute(rep);
+              break;
+            case "s":
+              rep2 = FDate.second(rep);
+              break;
           }
-          return format.replace(/\w+/g, function (match2) {
-            var rep2 = match2;
-            switch (match2.substring(0, 1)) {
-              case "y":
-                rep2 = match2.length < 4
-                        ? FDate.year(rep) % 100
-                        : FDate.year(rep);
-                break;
-              case "h":
-                rep2 = rep.getHours() > 12
-                        ? FDate.hour(rep) % 12
-                        : FDate.hour(rep);
-                break;
-              case "M":
-                rep2 = FDate.month(rep);
-                break;
-              case "d":
-                rep2 = FDate.day(rep);
-                break;
-              case "H":
-                rep2 = FDate.hour(rep);
-                break;
-              case "m":
-                rep2 = FDate.minute(rep);
-                break;
-              case "s":
-                rep2 = FDate.second(rep);
-                break;
-            }
-            if (rep2 !== match2 && rep2 < 10 && match2.length > 1) {
-              rep2 = "0" + rep2;
-            }
-            return rep2;
-          });
-        }
+          if (rep2 !== match2 && rep2 < 10 && match2.length > 1) {
+            rep2 = "0" + rep2;
+          }
+          return rep2;
+        });
+      }
+      if (!isNaN(pad = parseInt((pad || '').substring(1)))) {
+        rep = FString.padLeft(rep, Math.abs(pad), ' ', pad < 0);
       }
       return rep;
     });
@@ -426,6 +462,19 @@
   };
   FString.isNullOrWhiteSpace = function (str) {
     return typeof str !== "string" || /^\s*$/.test(str);
+  };
+  FString.padLeft = function (str, len, ch, isRight) {
+    var i = -1;
+    ch = ch || ' ';
+    str = String(str);
+    len = len - str.length;
+    while (++i < len) {
+        str = isRight ? str + ch : ch + str;
+    }
+    return str;
+  };
+  FString.padRight = function (str, len, ch) {
+    return FString.padLeft(str, len, ch, true);
   };
   FString.replace = function (str, search, replace) {
     return str.replace(new RegExp(FRegExp.escape(search), "g"), replace);
@@ -556,6 +605,11 @@
     Seq.iter(function (x) {
       xs.push(x);
     }, range);
+  };
+  FArray.blit = function (source, sourceIndex, target, targetIndex, count) {
+    while(count--) {
+      target[targetIndex++] = source[sourceIndex++]
+    }
   };
   FArray.partition = function (f, xs) {
     var ys = [], zs = [], j = 0, k = 0;
@@ -1183,6 +1237,11 @@
         ? [x, x + step] : null;
     }, first);
   };
+  Seq.rangeChar = function (first, last) {
+    return Seq.unfold(function (x) {
+      return (x <= last) ? [x, String.fromCharCode(x.charCodeAt(0) + 1)] : null;
+    }, first);
+  };
   Seq.range = function (first, last) {
     return Seq.rangeStep(first, 1, last);
   };
@@ -1316,16 +1375,24 @@
     };
     return e;
   };
-  Seq.take = Seq.truncate = function (n, xs) {
+  Seq.take = function (n, xs, truncate) {
     return Seq.delay(function () {
       var iter = xs[Symbol.iterator]();
       return Seq.unfold(function (i) {
         if (i < n) {
           var cur = iter.next();
-          return [cur.value, i + 1];
+          if (!cur.done) {
+            return [cur.value, i + 1];
+          }
+          else if (!truncate) {
+            throw "Seq has not enough elements";
+          }
         }
       }, 0);
     });
+  };
+  Seq.truncate = function (n, xs) {
+    return Seq.take(n, xs, true);
   };
   Seq.takeWhile = function (f, xs) {
     return Seq.delay(function () {
@@ -1429,7 +1496,7 @@
       return acc.add(x);
     }, new Set(), xs);
   };
-  FSet["+"] = FSet.union = function (set1, set2) {
+  FSet.op_Addition = FSet.union = function (set1, set2) {
     var set = new Set(set1);
     set2.forEach(function (x) {
       set.add(x);
@@ -1444,7 +1511,7 @@
       return acc;
     }, new Set(), sets);
   };
-  FSet["-"] = FSet.difference = function (set1, set2) {
+  FSet.op_Subtraction = FSet.difference = function (set1, set2) {
     var set = new Set(set1);
     set2.forEach(function (x) {
       set.delete(x);
@@ -1493,6 +1560,20 @@
   FSet.isSupersetOf = FSet.isSuperset = function (set1, set2) {
     return FSet.isSubset(set2, set1);
   };
+  FSet.copyTo = function (xs, arr, arrayIndex, count) {
+      if (!arr instanceof Array)
+          throw "Array is invalid";
+
+      count = count || arr.length;
+      var i = arrayIndex || 0;
+      var iter = xs[Symbol.iterator]();
+      while (count--) {
+          var el = iter.next();
+          if (el.done)
+              break;
+          arr[i++] = el.value;
+      };
+  };
   FSet.partition = function (f, xs) {
     return Seq.fold(function (acc, x) {
       var lacc = acc[0], racc = acc[1];
@@ -1502,7 +1583,10 @@
   FSet.removeInPlace = function (item, xs) {
     xs.delete(item);
     return xs;
-  }
+  };
+  FSet.remove = function (item, xs) {
+    return FSet.removeInPlace(item, new Set(xs));
+  };
 
   var FMap = exports.Map = {};
   FMap.ofArray = function (xs) {
@@ -1581,6 +1665,9 @@
     }, map);
   };
   FMap.removeInPlace = FSet.removeInPlace;
+  FMap.remove = function (item, map) {
+    return FMap.removeInPlace(item, new Map(map));
+  };
   FMap.tryPick = function (f, map) {
     return Seq.tryPick(function (kv) {
       var res = f(kv[0], kv[1]);
@@ -1890,13 +1977,13 @@
     return [
       Obs.choose(function (v) {
         var res = f(v);
-        return res.tag == "Choice1Of2"
-          ? res.data0 : null;
+        return res.Case == "Choice1Of2"
+          ? res.Fields[0] : null;
       }, w),
       Obs.choose(function (v) {
         var res = f(v);
-        return res.tag == "Choice2Of2"
-          ? res.data0 : null;
+        return res.Case == "Choice2Of2"
+          ? res.Fields[0] : null;
       }, w),
     ];
   };

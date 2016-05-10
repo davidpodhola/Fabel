@@ -3,10 +3,12 @@ namespace Fable
 type CompilerOptions = {
         code: string
         projFile: string
-        symbols: string[]
-        plugins: string[]
-        lib: string
+        symbols: string list
+        plugins: string list
+        refs: Map<string, string>
         watch: bool
+        clamp: bool
+        copyExt: bool
     }
     
 type CompilerError(msg) =
@@ -20,10 +22,25 @@ type ICompiler =
     abstract Options: CompilerOptions
     abstract Plugins: IPlugin list
     
+type EraseAttribute() = inherit System.Attribute()
+[<Erase>] type U2<'a, 'b> = Case1 of 'a | Case2 of 'b
+[<Erase>] type U3<'a, 'b, 'c> = Case1 of 'a | Case2 of 'b | Case3 of 'c
+    
+module Patterns =
+    let (|Try|_|) (f: 'a -> 'b option) a = f a
+    
+    let (|DicContains|_|) (dic: System.Collections.Generic.IDictionary<'k,'v>) key =
+        let success, value = dic.TryGetValue key
+        if success then Some value else None
+
+    let (|SetContains|_|) set item =
+        if Set.contains item set then Some item else None
+    
 module Naming =
     open System
     open System.IO
     open System.Text.RegularExpressions
+    open Patterns
     
     let (|StartsWith|_|) pattern (txt: string) =
         if txt.StartsWith pattern then Some pattern else None
@@ -38,7 +55,10 @@ module Naming =
     
     let ignoredCompilerGenerated =
         set [ "CompareTo"; "Equals"; "GetHashCode" ]
-        
+
+    let ignoredAtts =
+        set ["Erase"; "Import"; "Global"; "Emit"]
+
     let ignoredFilesRegex =
         Regex(@"Fable\.(?:Import|Core)[\w.]*\.fs$")
         
@@ -58,23 +78,52 @@ module Naming =
 
     let normalizePath (path: string) =
         path.Replace("\\", "/")
+        
+    let getCommonPrefix (xs: string list) =
+        let rec getCommonPrefix (prefix: string) = function
+            | [] -> prefix
+            | (x: string)::xs ->
+                let mutable i = 0
+                while i < prefix.Length && i < x.Length && x.[i] = prefix.[i] do
+                    i <- i + 1
+                getCommonPrefix (prefix.Substring(0,i)) xs
+        match xs with
+        | [] -> ""
+        | [x] -> x
+        | x::xs -> getCommonPrefix x xs
+        
+    let coreLib = "fable-core"
+        
+    let exportsIdent = "$exports"
     
-    let fromLib (com: ICompiler) path =
-        Path.Combine(com.Options.lib, path) |> normalizePath
-
-    let getCoreLibPath (com: ICompiler) =
-        Path.Combine(com.Options.lib, "fable-core.js") |> normalizePath
-
-    let getImportModuleIdent i = sprintf "$M%i" (i+1)
+    let getImportIdent i = sprintf "$import%i" i
     
-    let getCurrentModuleIdent () = "$M0"
-    
-    let trimDots (s: string) =
-        match s.StartsWith ".", s.EndsWith "." with
-        | true, true -> s.Substring(1, s.Length - 2)
-        | true, false -> s.Substring(1)
-        | false, true -> s.Substring(0, s.Length - 1)
-        | false, false -> s
+    /// If flag --copyExt is activated, copy files outside project folder into
+    /// an internal `.fable.external` folder with a hash to prevent naming conflicts 
+    let fixExternalPath =
+        let cache = System.Collections.Generic.Dictionary<string, string>()
+        let addToCache (cache: System.Collections.Generic.Dictionary<'k, 'v>) k v =
+            cache.Add(k, v); v
+        let isExternal projPath path =
+            let rec parentContains rootPath path' =
+                match Directory.GetParent path' with
+                | null -> Some (rootPath, path)
+                | parent when rootPath = parent.FullName -> None
+                | parent -> parentContains rootPath parent.FullName
+            parentContains (Path.GetDirectoryName projPath) path
+        fun (com: ICompiler) filePath ->
+            if not com.Options.copyExt then filePath else
+            match Path.GetFullPath filePath with
+            | DicContains cache filePath -> filePath
+            | Try (isExternal com.Options.projFile) (rootPath, filePath) ->
+                Path.Combine(rootPath, ".fable.external",
+                    sprintf "%s-%i%s"
+                        (Path.GetFileNameWithoutExtension filePath)
+                        (filePath.GetHashCode() |> abs)
+                        (Path.GetExtension filePath))
+                |> addToCache cache filePath
+            | filePath ->
+                addToCache cache filePath filePath
 
     // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Lexical_grammar#Keywords
     let jsKeywords =
@@ -83,8 +132,10 @@ module Naming =
             "let"; "long"; "native"; "new"; "null"; "package"; "private"; "protected"; "public"; "return"; "self"; "short"; "static"; "super"; "switch"; "synchronized";
             "this"; "throw"; "throws"; "transient"; "true"; "try"; "typeof"; "undefined"; "var"; "void"; "volatile"; "while"; "with"; "yield" ]
 
+    let isInvalidJsIdent name =
+        identForbiddenCharsRegex.IsMatch(name) || jsKeywords.Contains name
+
     let sanitizeIdent conflicts name =
-        let modIdentRegex = Regex(@"^\$M\d+$", RegexOptions.Compiled)
         let preventConflicts conflicts name =
             let rec check n =
                 let name = if n > 0 then sprintf "%s_%i" name n else name
@@ -94,7 +145,7 @@ module Naming =
         let sanitizedName =
             identForbiddenCharsRegex.Replace(removeParens name, "_")
         // Check if it's a keyword or clashes with module ident pattern
-        (jsKeywords.Contains sanitizedName || modIdentRegex.IsMatch sanitizedName)
+        jsKeywords.Contains sanitizedName
         |> function true -> "_" + sanitizedName | false -> sanitizedName
         // Check if it already exists
         |> preventConflicts conflicts

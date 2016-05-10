@@ -6,7 +6,7 @@ open System.Text.RegularExpressions
 open Fake
 
 // version info
-let version = "0.0.15"  // or retrieve from CI server
+let version = "0.2.9"
 
 module Util =
     open System.Net
@@ -80,12 +80,17 @@ module Node =
 let fableBuildDir = Util.join ["build";"fable";"bin"]
 let testsBuildDir = Util.join ["build";"tests"]
 let pluginsBuildDir = Util.join ["build";"plugins"]
-let samplesBuildDir = Util.join ["build";"samples"]
 
 // Targets
 Target "Clean" (fun _ ->
-    !! "/build" ++ "src/**/bin/" ++ "src/**/obj/"
-    |> Seq.iter Util.rmdir
+    !! fableBuildDir ++ pluginsBuildDir
+        ++ "src/**/bin/" ++ "src/**/obj/"
+    |> CleanDirs
+    // Exclude node_modules
+    !! "build/fable/**/*.*" -- "build/fable/node_modules/**/*.*"
+    |> Seq.iter FileUtils.rm
+    !! "build/tests/**/*.*" -- "build/tests/node_modules/**/*.*"
+    |> Seq.iter FileUtils.rm
 )
 
 Target "FableRelease" (fun _ ->
@@ -94,18 +99,26 @@ Target "FableRelease" (fun _ ->
     |> MSBuild fableBuildDir "Build"
         ["Configuration","Release"; "DocumentationFile", xmlPath]
     |> Log "Release-Output: "
+    
+    // For some reason, ProjectCracker targets are not working after updating the package
+    !! "packages/FSharp.Compiler.Service.ProjectCracker/utilities/net45/FSharp.Compiler.Service.ProjectCrackerTool.exe*"
+    |> Seq.iter (fun x -> FileUtils.cp x "build/fable/bin")
 )
 
 Target "FableDebug" (fun _ ->
     !! "src/fable-fsharp/Fable.fsproj"
     |> MSBuildDebug fableBuildDir "Build"
     |> Log "Debug-Output: "
+    let targetDir = "build/fable"
+    FileUtils.cp_r "src/fable-js" targetDir
+    Npm.command targetDir "version" [version]
 )
 
 Target "FableJs" (fun _ ->
     let targetDir = "build/fable"
     FileUtils.cp_r "src/fable-js" targetDir
     FileUtils.cp "README.md" targetDir
+    Npm.command targetDir "version" [version]
     Npm.install targetDir []
 )
 
@@ -115,20 +128,24 @@ Target "NUnitTest" (fun _ ->
     |> Log "Release-Output: "
     
     [Path.Combine(testsBuildDir, "Fable.Tests.dll")]
-    |> NUnit (fun p -> { p with DisableShadowCopy = true })
+    |> NUnit (fun p -> { p with DisableShadowCopy = true 
+                                OutputFile = Path.Combine(testsBuildDir, "TestResult.xml") })
 )
 
 Target "MochaTest" (fun _ ->
-    let fableDir = Util.join ["build";"fable"] |> Path.GetFullPath
-    let testsBuildDir = Path.GetFullPath testsBuildDir
-    FileUtils.cp_r "src/tests" testsBuildDir
+    Node.run "." "build/fable" ["src/tests/Other"]
+    Node.run "." "build/fable" ["src/tests/"]
+    FileUtils.cp "src/tests/package.json" testsBuildDir
     Npm.install testsBuildDir []
-    Node.run testsBuildDir fableDir []
+    // Copy the development version of fable-core.js
+    if environVar "DEV_MACHINE" = "1" then
+        FileUtils.cp "import/core/fable-core.js" "build/tests/node_modules/fable-core/"
+    Npm.script testsBuildDir "test" []
 )
 
 Target "Plugins" (fun _ ->
     CreateDir pluginsBuildDir
-    [ "src/plugins/Fable.Plugins.NUnit.fsx" ]
+    [ "src/plugins/Fable.Plugins.NUnit.fsx"; "src/plugins/Fable.Plugins.VisualStudio.UnitTests.fsx"; "src/plugins/Fable.Plugins.BitwiseWrap.fsx" ]
     |> Seq.iter (fun fsx ->
         let dllFile = Path.ChangeExtension(Path.GetFileName fsx, ".dll")
         [fsx]
@@ -139,57 +156,41 @@ Target "Plugins" (fun _ ->
         |> function 0 -> () | _ -> failwithf "Cannot compile %s" fsx)
 )
 
-Target "Samples" (fun _ ->
-    !! samplesBuildDir
-        ++ "samples/**/node_modules/"
-        ++ "samples/**/bin/" ++ "samples/**/obj/"
-    |> CleanDirs
-    let fableDir = Util.join ["build";"fable"] |> Path.GetFullPath
-    let samplesBasePath = Path.GetFullPath "samples"
-    let samplesBuilDir = Path.GetFullPath samplesBuildDir
-    
-    !! "samples/**/fableconfig.json"
-    |> Seq.iter (fun path ->
-        let pathDir = Path.GetDirectoryName path
-        let outDir = pathDir.Replace(samplesBasePath, samplesBuildDir)
-        FileUtils.cp_r pathDir outDir
-        if Path.Combine(outDir, "package.json") |> File.Exists then
-            Npm.install outDir []
-        Node.run outDir fableDir []
-    )
-)
-
-Target "DeleteNodeModules" (fun _ ->
-    // Delete node_modules to make the artifact lighter
+Target "MakeArtifactLighter" (fun _ ->
     Util.rmdir "build/fable/node_modules"
+    !! "build/fable/bin/*.pdb" ++ "build/fable/bin/*.xml"
+    |> Seq.iter FileUtils.rm
 )
 
 Target "Publish" (fun _ ->
     let workingDir = "temp/build"
     Util.downloadArtifact workingDir
     Util.convertFileToUnixLineBreaks (Path.Combine(workingDir, "index.js"))
-    Npm.command workingDir "version" [version]
+    // Npm.command workingDir "version" [version]
     Npm.command workingDir "publish" []
 )
 
 Target "Import" (fun _ ->
-    !! "import/core/Fable.Import.fsproj"
+    Util.run "." "uglifyjs" "import/core/fable-core.js -c -m -o import/core/fable-core.min.js"
+    !! "import/core/Fable.Core.fsproj"
     |> MSBuildRelease "import/core" "Build"
     |> Log "Import-Output: "
 )
 
-Target "CleanSamples" (fun _ ->
-    !! "/samples/**/*.js.map"
-    |> Seq.where (fun file -> not(file.Contains "node_modules"))
-    |> Seq.iter FileUtils.rm
+Target "Samples" (fun _ ->
+    let fableDir = Util.join ["build";"fable"] |> Path.GetFullPath    
+    !! "samples/**/out/" |> CleanDirs
+    !! "samples/**/fableconfig.json"
+    |> Seq.iter (fun path ->
+        let pathDir = Path.GetDirectoryName path
+        Node.run pathDir fableDir [])
+)
 
-    !! "/samples/**/*.js"
-    |> Seq.where (fun file -> not(file.Contains "node_modules"))
-    |> Seq.where (fun file ->
-        Regex.IsMatch(file,"(?:bundle|fable-core)\.js$")
-        || File.Exists(Path.ChangeExtension(file, ".fs"))
-        || File.Exists(Path.ChangeExtension(file, ".fsx")))
-    |> Seq.iter FileUtils.rm
+Target "LineCount" (fun _ ->
+    !! "src/fable-fsharp/**/*.fs"
+    |> Seq.map (File.ReadLines >> Seq.length)
+    |> Seq.sum
+    |> printfn "Line count: %i"
 )
 
 Target "All" ignore
@@ -200,7 +201,7 @@ Target "All" ignore
   ==> "FableJs"
   ==> "Plugins"
   ==> "MochaTest"
-  =?> ("DeleteNodeModules", environVar "APPVEYOR" = "True")
+  =?> ("MakeArtifactLighter", environVar "APPVEYOR" = "True")
   ==> "All"
 
 // Start build

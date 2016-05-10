@@ -1,8 +1,11 @@
 {
-    "env": "node",
-    "projFile": "./Fable.Tests.fsproj",
-    "plugins": "../plugins/Fable.Plugins.NUnit.dll",
-    "scripts": {
-        "postbuild": "npm test"
+    "projFile": "Fable.Tests.fsproj",
+    "outDir": "../../build/tests",
+    "module": "commonjs",
+    "symbols": ["MOCHA"],
+    "plugins": ["../../build/plugins/Fable.Plugins.NUnit.dll"],
+    "copyExt": true,
+    "refs": {
+        "Fable.Tests.Clamp": "./Other"
     }
 }

@@ -4,6 +4,42 @@ open NUnit.Framework
 open Fable.Tests.Util
 open System.Collections.Generic
 
+// TODO
+// [<Test>]
+// let ``Pattern matching with arrays works``() =
+//     match [||] with [||] -> true | _ -> false
+//     |> equal true
+//     match [|1|] with [||] -> 0 | [|x|] -> 1 | _ -> 2
+//     |> equal 1
+//     match [|"a";"b"|] with [||] -> 0 | [|"a";"b"|] -> 1 | _ -> 2
+//     |> equal 1
+
+[<Emit("$1.constructor.name == $0")>]
+let jsConstructorIs (s: string) (ar: 'T[]) = true 
+
+[<Test>]
+let ``Typed Arrays work``() =  
+    let xs = [| 1; 2; 3; |]
+    let ys = [| 1.; 2.; 3.; |]
+    let zs = [| "This is a string" |]
+    xs |> jsConstructorIs "Int32Array" |> equal true
+    ys |> jsConstructorIs "Float64Array" |> equal true
+    zs |> jsConstructorIs "Array" |> equal true
+
+[<Test>]
+let ``Byte arrays are not clamped by default``() =
+    let ar = [|5uy|]
+    ar.[0] <- ar.[0] + 255uy
+    equal 4uy ar.[0]
+
+#if MOCHA
+[<Test>]
+let ``Clamped byte arrays work``() =
+    let ar = Util2.Helper2.CreateClampedArray()
+    ar.[0] <- ar.[0] + 255uy
+    equal 255uy ar.[0]
+#endif
+
 [<Test>]
 let ``Array slice with upper index work``() =  
     let xs = [| 1; 2; 3; 4; 5; 6 |]
@@ -62,34 +98,37 @@ let ``Array.zeroCreate works``() =
     equal 2 xs.Length
     equal 0 xs.[1]
 
-// [<Test>]
-// let ``Array.blit works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.zeroCreate 2
-//     Array.blit xs 2 ys 0 2
-//     ys.[0] + ys.[1]
-//     |> equal 1
-// 
-// [<Test>]
-// let ``Array.copy works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.copy xs
-//     ys.[0] + ys.[1]
-//     |> equal 1
-// 
-// [<Test>]
-// let ``Array.sub works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.sub xs 2 2
-//     ys.[0] + ys.[1]
-//     |> equal 1
+[<Test>]
+let ``Array.create works``() =   
+    let xs = Array.create 2 5
+    equal 2 xs.Length
+    Array.sum xs |> equal 10
 
-// [<Test>]
-// let ``Array.fill works``() =   
-//     let xs = Array.zeroCreate 2
-//     Array.fill xs 0 2 2.
-//     xs.[0] + xs.[1]
-//     |> equal 1
+[<Test>]
+let ``Array.blit works``() =   
+    let xs = [|1..10|]
+    let ys = Array.zeroCreate 20
+    Array.blit xs 3 ys 5 4        // [|0; 0; 0; 0; 0; 4; 5; 6; 7; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0|]
+    ys.[5] + ys.[6] + ys.[7] + ys.[8] |> equal 22
+
+[<Test>]
+let ``Array.copy works``() =   
+    let xs = [|1; 2; 3; 4|]
+    let ys = Array.copy xs
+    xs.[0] <- 0                   // Ensure a deep copy
+    ys |> Array.sum |> equal 10
+
+[<Test>]
+let ``Array.sub works``() =   
+    let xs = [|0..99|]
+    let ys = Array.sub xs 5 10    // [|5; 6; 7; 8; 9; 10; 11; 12; 13; 14|]
+    ys |> Array.sum |> equal 95
+
+[<Test>]
+let ``Array.fill works``() =   
+    let xs = Array.zeroCreate 4   // [|0; 0; 0; 0|]
+    Array.fill xs 1 2 3           // [|0; 3; 3; 0|]
+    xs |> Array.sum |> equal 6
 
 [<Test>]
 let ``Array.empty works``() =   
@@ -348,6 +387,15 @@ let ``Array.pick works``() =
        | 2. -> Some x
        | _ -> None)
     |> equal 2.
+
+[<Test>]
+let ``Array.range works``() =
+    [|1..5|]
+    |> Array.reduce (+)
+    |> equal 15
+    [|0..2..9|]
+    |> Array.reduce (+)
+    |> equal 20
 
 [<Test>]
 let ``Array.reduce works``() =   

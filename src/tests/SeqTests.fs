@@ -250,6 +250,37 @@ let ``Seq.pick works``() =
     |> equal 2.
 
 [<Test>]
+let ``Seq.range works``() =
+    seq{1..5}
+    |> Seq.reduce (+)
+    |> equal 15
+
+    seq{0..2..9}
+    |> Seq.reduce (+)
+    |> equal 20
+
+    seq{1. .. 5.}
+    |> Seq.reduce (+)
+    |> equal 15.
+
+    seq{0. .. 2. .. 9.}
+    |> Seq.reduce (+)
+    |> equal 20.
+    
+    seq{9 .. -2 .. 0}
+    |> Seq.reduce (+)
+    |> equal 25
+
+    seq{'a' .. 'f'}
+    |> Seq.toArray
+    |> System.String
+    |> equal "abcdef"
+    
+    seq{'z' .. 'a'}
+    |> Seq.length
+    |> equal 0
+
+[<Test>]
 let ``Seq.reduce works``() =
     let xs = [1.; 2.]
     xs |> Seq.reduce (+)
@@ -464,6 +495,9 @@ let ``Seq.take works``() =
     xs |> Seq.take 2
     |> Seq.last
     |> equal 2.
+    // Seq.take should throw an exception if there're not enough elements 
+    try xs |> Seq.take 20 |> Seq.length with _ -> -1
+    |> equal -1
 
 [<Test>]
 let ``Seq.takeWhile works``() =
@@ -478,6 +512,9 @@ let ``Seq.truncate works``() =
     xs |> Seq.truncate 2
     |> Seq.last
     |> equal 2.
+    // Seq.truncate shouldn't throw an exception if there're not enough elements 
+    try xs |> Seq.truncate 20 |> Seq.length with _ -> -1
+    |> equal 5
 
 [<Test>]
 let ``Seq.where works``() =

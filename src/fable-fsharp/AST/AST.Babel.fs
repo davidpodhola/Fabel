@@ -1,4 +1,5 @@
 namespace Fable.AST.Babel
+open Fable
 open Fable.AST
 
 /// The type field is a string representing the AST variant type. 
@@ -61,6 +62,7 @@ type Identifier(name, ?loc) =
     inherit Expression("Identifier", ?loc = loc)
     member x.name: string = name
     interface Pattern
+    override x.ToString() = x.name
 
 (** ##Literals *)
 type RegExpLiteral(pattern, flags, ?loc) =
@@ -105,13 +107,14 @@ type Directive(value, ?loc) =
 /// A complete program source tree.
 /// Parsers must specify sourceType as "module" if the source has been parsed as an ES6 module. 
 /// Otherwise, sourceType must be "script".
-type Program(fileName, loc, body, ?directives) =
+type Program(fileName, originalFilename, loc, body, ?directives) =
     inherit Node("Program", loc)
     member x.sourceType = "module" // Don't use "script"
     member x.body: U2<Statement, ModuleDeclaration> list = body
     member x.directives: Directive list = defaultArg directives []
     /// Doesn't belong to babel specs
     member x.fileName: string = fileName
+    member x.originalFilename: string = originalFilename
 
 (** ##Statements *)
 /// An expression statement, i.e., a statement consisting of a single expression.
@@ -471,8 +474,8 @@ type RestElement(argument, ?loc) =
 type ClassMethodKind =
     | ClassConstructor | ClassFunction | ClassGetter | ClassSetter
 
-type ClassMethod(loc, kind, key, args, body, computed, ``static``) =
-    inherit Node("ClassMethod", loc)
+type ClassMethod(kind, key, args, body, computed, ``static``, ?loc) =
+    inherit Node("ClassMethod", ?loc = loc)
     member x.kind = match kind with ClassConstructor -> "constructor"
                                   | ClassGetter -> "get"
                                   | ClassSetter -> "set"
@@ -489,25 +492,25 @@ type ClassMethod(loc, kind, key, args, body, computed, ``static``) =
 /// ES Class Fields & Static Properties
 /// https://github.com/jeffmo/es-class-fields-and-static-properties
 /// e.g, class MyClass { static myStaticProp = 5; myProp /* = 10 */; }
-type ClassProperty(loc, key, value) =
-    inherit Node("ClassProperty", loc)
+type ClassProperty(key, value, ?loc) =
+    inherit Node("ClassProperty", ?loc = loc)
     member x.key: Identifier = key
     member x.value: Expression = value
 
-type ClassBody(loc, body) =
-    inherit Node("ClassBody", loc)
+type ClassBody(body, ?loc) =
+    inherit Node("ClassBody", ?loc = loc)
     member x.body: U2<ClassMethod, ClassProperty> list = body
 
-type ClassDeclaration(loc, body, id, ?super) =
-    inherit Declaration("ClassDeclaration", loc)
+type ClassDeclaration(body, id, ?super, ?loc) =
+    inherit Declaration("ClassDeclaration", ?loc = loc)
     member x.body: ClassBody = body
     member x.id: Identifier = id
     member x.superClass: Expression option = super
     // member x.decorators: Decorator list = defaultArg decorators []
 
 /// Anonymous class: e.g., var myClass = class { }
-type ClassExpression(loc, body, ?id, ?super) =
-    inherit Expression("ClassExpression", loc)
+type ClassExpression(body, ?id, ?super, ?loc) =
+    inherit Expression("ClassExpression", ?loc = loc)
     member x.body: ClassBody = body
     member x.id: Identifier option = id    
     member x.superClass: Expression option = super
@@ -534,11 +537,11 @@ type ImportSpecifier(local, imported, ?loc) =
     inherit ModuleSpecifier("ImportSpecifier", local, ?loc = loc)
     member x.imported: Identifier = imported
 
-/// A default import specifier, e.g., foo in import foo from "mod.js".
+/// A default import specifier, e.g., foo in import foo from "mod".
 type ImportDefaultSpecifier(local, ?loc) =
     inherit ModuleSpecifier("ImportDefaultSpecifier", local, ?loc = loc)
     
-/// A namespace import specifier, e.g., * as foo in import * as foo from "mod.js".
+/// A namespace import specifier, e.g., * as foo in import * as foo from "mod".
 type ImportNamespaceSpecifier(local, ?loc) =
     inherit ModuleSpecifier("ImportNamespaceSpecifier", local, ?loc = loc)
 
